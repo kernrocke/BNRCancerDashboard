@@ -11,8 +11,9 @@ library(plotly)
 library(tidyr)
 library(purrr)
 
-# Read the CSV file
+# Read the CSV files
 data <- read.csv("data/cancer_2013_2022_bnr.csv", stringsAsFactors = FALSE)
+mortality_data <- read.csv("data/cancer_death_2008_2024.csv", stringsAsFactors = FALSE)
 
 # Preprocess data if needed (e.g., convert dates, etc.)
 # Assuming dxyr is integer year, siteiarc is character
@@ -156,6 +157,62 @@ ui <- dashboardPage(
               )
       ),
       
+      # Mortality page
+      tabItem(tabName = "mortality",
+              fluidRow(
+                column(4,
+                       selectInput("mort_year_select", "Select Year:",
+                                   choices = c("All", sort(unique(mortality_data$dodyear))),
+                                   selected = "All")
+                ),
+                column(4,
+                       selectInput("mort_site_select", "Select Cancer Site:",
+                                   choices = c("All", sort(unique(mortality_data$siteiarc))),
+                                   selected = "All")
+                )
+              ),
+              fluidRow(
+                valueBoxOutput("num_deaths", width = 6),
+                valueBoxOutput("avg_age_death", width = 6)
+              ),
+              fluidRow(
+                box(
+                  title = "Deaths by Year",
+                  plotOutput("deaths_by_year"),
+                  width = 6
+                ),
+                box(
+                  title = "Deaths by Year and Sex",
+                  plotOutput("deaths_by_sex"),
+                  width = 6
+                )
+              ),
+              fluidRow(
+                column(4, 
+                       box(title = "Top 10 Cancer Sites (Both Sexes)", 
+                           div(class = "both-table", DT::dataTableOutput("top_deaths_both")),
+                           width = NULL)
+                ),
+                column(4, 
+                       box(title = "Top 10 Cancer Sites (Females)", 
+                           div(class = "female-table", DT::dataTableOutput("top_deaths_female")),
+                           width = NULL)
+                ),
+                column(4, 
+                       box(title = "Top 10 Cancer Sites (Males)", 
+                           div(class = "male-table", DT::dataTableOutput("top_deaths_male")),
+                           width = NULL)
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Deaths by 5-Year Age Bands",
+                  plotOutput("deaths_by_age_bands"),
+                  width = 12
+                )
+              )
+      ),
+      
       # Survival page
       tabItem(tabName = "survival",
               h2("Survival Page"),
@@ -217,10 +274,6 @@ ui <- dashboardPage(
       ),
       
       # Placeholder for other pages
-      tabItem(tabName = "mortality",
-              h2("Mortality Page"),
-              p("Content for mortality statistics will be added here.")
-      ),
       tabItem(tabName = "projection",
               h2("Projection Page"),
               p("Content for projections will be added here.")
@@ -584,6 +637,152 @@ server <- function(input, output) {
       head(5) %>%
       rename(`Cancer Site` = siteiarc, Frequency = n)
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
+  
+  # Mortality page
+  filtered_mort_data <- reactive({
+    df <- mortality_data
+    if (input$mort_year_select != "All") {
+      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+    }
+    if (input$mort_site_select != "All") {
+      df <- df %>% filter(siteiarc == input$mort_site_select)
+    }
+    df
+  })
+  
+  output$num_deaths <- renderValueBox({
+    valueBox(
+      nrow(filtered_mort_data()),
+      "Number of Deaths (2008-2024)",
+      icon = icon("skull"),
+      color = "red"
+    )
+  })
+  
+  output$avg_age_death <- renderValueBox({
+    avg_age <- round(mean(filtered_mort_data()$age, na.rm = TRUE), 1)
+    valueBox(
+      avg_age,
+      "Average Age at Death",
+      icon = icon("user"),
+      color = "green"
+    )
+  })
+  
+  output$deaths_by_year <- renderPlot({
+    df <- mortality_data
+    if (input$mort_site_select != "All") {
+      df <- df %>% filter(siteiarc == input$mort_site_select)
+    }
+    df %>%
+      group_by(dodyear) %>%
+      summarise(deaths = n()) %>%
+      ggplot(aes(x = dodyear, y = deaths)) +
+      geom_bar(stat = "identity", fill = "red") +
+      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 4) +
+      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 1)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
+            axis.text.y = element_text(size = 12),
+            axis.title.x = element_text(size = 14),
+            axis.title.y = element_text(size = 14)) +
+      labs(x = "Year", y = "Number of Deaths")
+  })
+  
+  output$deaths_by_sex <- renderPlot({
+    df <- mortality_data
+    if (input$mort_site_select != "All") {
+      df <- df %>% filter(siteiarc == input$mort_site_select)
+    }
+    df %>%
+      group_by(dodyear, sex) %>%
+      summarise(deaths = n(), .groups = 'drop') %>%
+      ggplot(aes(x = dodyear, y = deaths, color = sex, group = sex)) +
+      geom_line(size = 1) +
+      geom_point(size = 2) +
+      scale_color_manual(values = c("Female" = "#DD1C77", "Male" = "#3182BD")) +
+      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 1)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
+            axis.text.y = element_text(size = 12),
+            axis.title.x = element_text(size = 14),
+            axis.title.y = element_text(size = 14)) +
+      labs(x = "Year", y = "Number of Deaths", color = "Sex")
+  })
+  
+  top_deaths_both <- reactive({
+    df <- mortality_data
+    if (input$mort_year_select != "All") {
+      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+    }
+    df %>%
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      rename(`Cancer Site` = siteiarc, Frequency = n)
+  })
+  
+  output$top_deaths_both <- DT::renderDataTable({
+    top_deaths_both()
+  }, options = list(pageLength = 10, searching = FALSE))
+  
+  top_deaths_female <- reactive({
+    df <- mortality_data
+    if (input$mort_year_select != "All") {
+      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+    }
+    df %>%
+      filter(sex == "Female" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      rename(`Cancer Site` = siteiarc, Frequency = n)
+  })
+  
+  output$top_deaths_female <- DT::renderDataTable({
+    top_deaths_female()
+  }, options = list(pageLength = 10, searching = FALSE))
+  
+  top_deaths_male <- reactive({
+    df <- mortality_data
+    if (input$mort_year_select != "All") {
+      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+    }
+    df %>%
+      filter(sex == "Male" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      rename(`Cancer Site` = siteiarc, Frequency = n)
+  })
+  
+  output$top_deaths_male <- DT::renderDataTable({
+    top_deaths_male()
+  }, options = list(pageLength = 10, searching = FALSE))
+  
+  output$deaths_by_age_bands <- renderPlot({
+    df <- filtered_mort_data()
+    df %>%
+      mutate(age_band = cut(age, 
+                            breaks = c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, Inf),
+                            labels = c("0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", 
+                                       "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74", "75-79", 
+                                       "80-84", "85+"),
+                            right = FALSE)) %>%
+      filter(!is.na(age_band)) %>%
+      group_by(age_band) %>%
+      summarise(deaths = n()) %>%
+      ggplot(aes(x = age_band, y = deaths)) +
+      geom_bar(stat = "identity", fill = "darkred") +
+      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 4) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
+            axis.text.y = element_text(size = 12),
+            axis.title.x = element_text(size = 14),
+            axis.title.y = element_text(size = 14)) +
+      labs(x = "Age Band", y = "Number of Deaths")
+  })
   
   # Reports page
   reports_data <- reactive({
