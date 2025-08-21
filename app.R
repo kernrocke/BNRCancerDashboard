@@ -58,7 +58,7 @@ ui <- dashboardPage(
       tabItem(tabName = "home",
               fluidRow(
                 valueBoxOutput("total_cases"),
-                valueBoxOutput("total_deaths"),
+                valueBoxOutput("home_total_deaths"),
                 valueBoxOutput("avg_age")
               ),
               fluidRow(
@@ -344,7 +344,7 @@ ui <- dashboardPage(
                 tags$li("Nationally reported annual numbers of cancer deaths, presented by the Ministry of Health and Wellness, may differ from numbers of deaths and age-standardised mortality rates (ASMRs) reported by the BNR. MHW reports based on underlying cause of death and BNR reports all cases with cancer listed on the death certificate. All cases with cancer listed as a cause-of-death are treated as a death certificate notification and are investigated to determine the year of incidence.")
               ),
               h4(tags$strong("Data Analysis")),
-              p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research on Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
+              p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
       ),
       tabItem(tabName = "contact",
               h2(tags$strong("Contact Us")),
@@ -396,11 +396,11 @@ server <- function(input, output) {
     )
   })
   
-  output$total_deaths <- renderValueBox({
-    deaths <- sum(data$deceased == "dead", na.rm = TRUE)
+  # New value box for total deaths on the home page
+  output$home_total_deaths <- renderValueBox({
     valueBox(
-      deaths,
-      "Total Deaths",
+      nrow(mortality_data),
+      "Total Deaths (2008-2024)",
       icon = icon("skull"),
       color = "red"
     )
@@ -716,7 +716,7 @@ server <- function(input, output) {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
     df %>%
-      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
       head(10) %>%
@@ -733,7 +733,7 @@ server <- function(input, output) {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
     df %>%
-      filter(sex == "Female" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      filter(sex == "Female" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
       head(10) %>%
@@ -750,7 +750,7 @@ server <- function(input, output) {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
     df %>%
-      filter(sex == "Male" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>% # CHANGE: Added filter for non-missing siteiarc
+      filter(sex == "Male" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
       head(10) %>%
@@ -1093,7 +1093,6 @@ server <- function(input, output) {
     summ <- summary(fit)
     if (length(summ$time) == 0) return(rep(NA, 3))
     times_days <- c(365.25 * 1, 365.25 * 3, 365.25 * 5)
-    # Change made here: Ensured that 'probs' is defined before the for loop
     probs <- numeric(3)
     for (i in 1:3) {
       t <- times_days[i]
