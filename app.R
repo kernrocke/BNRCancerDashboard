@@ -57,13 +57,18 @@ ui <- dashboardPage(
       # Home page with infographic
       tabItem(tabName = "home",
               fluidRow(
-                valueBoxOutput("total_cases"),
-                valueBoxOutput("home_total_deaths"),
-                valueBoxOutput("avg_age")
+                valueBoxOutput("total_cases", width = 6),
+                valueBoxOutput("home_total_deaths", width = 6)
               ),
               fluidRow(
-                valueBoxOutput("pediatric_cases", width = 6),
-                valueBoxOutput("elderly_cases", width = 6)
+                valueBoxOutput("avg_age", width = 6),
+                valueBoxOutput("avg_age_death", width = 6)
+              ),
+              fluidRow(
+                valueBoxOutput("pediatric_cases", width = 3),
+                valueBoxOutput("elderly_cases", width = 3),
+                valueBoxOutput("pediatric_deaths", width = 3),
+                valueBoxOutput("elderly_deaths", width = 3)
               ),
               fluidRow(
                 box(
@@ -86,6 +91,18 @@ ui <- dashboardPage(
                 box(
                   title = "Top 5 Elderly Cancer Sites (Age ≥ 65) - 2013-2022",
                   DT::dataTableOutput("top5_elderly_sites"),
+                  width = 6
+                )
+              ),
+              fluidRow(
+                box(
+                  title = "Top 10 Cancer Deaths (2008-2024)",
+                  DT::dataTableOutput("top10_deaths_both_home"),
+                  width = 6
+                ),
+                box(
+                  title = "Top 10 Elderly Deaths (Age ≥ 65) - 2008-2024",
+                  DT::dataTableOutput("top10_deaths_elderly_home"),
                   width = 6
                 )
               ),
@@ -172,8 +189,9 @@ ui <- dashboardPage(
                 )
               ),
               fluidRow(
-                valueBoxOutput("num_deaths", width = 6),
-                valueBoxOutput("avg_age_death", width = 6)
+                valueBoxOutput("num_deaths", width = 4),
+                valueBoxOutput("mort_female_deaths", width = 4),
+                valueBoxOutput("mort_male_deaths", width = 4)
               ),
               fluidRow(
                 box(
@@ -276,7 +294,7 @@ ui <- dashboardPage(
       # Placeholder for other pages
       tabItem(tabName = "projection",
               h2("Projection Page"),
-              p("Content for projections will be added here.")
+              p(tags$strong("COMING SOON."))
       ),
       tabItem(tabName = "reports",
               h2("Reports Page"),
@@ -325,25 +343,6 @@ ui <- dashboardPage(
                 tags$li("Foreign diplomats are the usual residents of the countries they represent and were not enumerated.")
               ),
               h4(tags$strong("Data Quality")),
-              h5("Data Collection Methodology"),
-              p("Cases were ascertained by trained data abstractors via review of pathological and laboratory data, as well as data from key departments at the Queen Elizabeth Hospital: haematology clinic, the Clara Brathwaite Centre for Oncology & Nuclear Medicine, colposcopy, and death records."),
-              p("Following case ascertainment, data were abstracted directly onto encrypted laptops, using the International Agency for Research on Cancer (IARC)’s CanReg software, version 5. For complete information on each tumour, further retrieval from additional sources (e.g., private physicians and clinics) was performed as required. This is necessary as patients may take several pathways to diagnosis, whether accessing initial care through: the general practitioner, a non-governmental organisation (NGO) through breast or prostate screening programs, a specialist physician, or a surgeon. By collecting data from all sources, the most representative incidence date for the tumour can be determined (the first date of definitive diagnosis)."),
-              p("Mortality data was entered into a Research electronic data capture (REDCap) database from paper records existing within the Barbados National Registration Department. This allowed the team to conduct death clearance and provides death clearance data to other departments within the Ministry of Health and Wellness."),
-              p("The Barbados National Registry continues to make every effort to ensure cancer data is comparable with other registries internationally, as such, we have outlined below the definitions and assumptions used for reporting and the changes made over time:"),
-              tags$ol(
-                tags$li("The Registry switched from The International Agency for Research on Cancer (IARC) definition of incidence, for 2008 data collection year, to the European Network of Cancer Registries (ENCR) definition which better matched data we had collected for 2013 onward (see Appendix for definitions)."),
-                tags$li("Residency is categorised as:", 
-                        tags$ol(type = "i",
-                                tags$li("Persons living on the island for six months or more"),
-                                tags$li("‘Usual residence’ as per the Barbados Statistical Services definition (See Appendix)"),
-                                tags$li("All persons registered with the Electoral and Boundaries Commission"),
-                                tags$li("The address listed on the death certificate if no other information available")
-                        )
-                ),
-                tags$li("Only malignant tumours are for ASIRs are included in this report, per international standards. The summary tables include both malignant tumours and cervical carcinoma in situ. Notes accompanying the tables will guide readers accordingly."),
-                tags$li("Nationally reported annual numbers of cancer deaths, presented by the Ministry of Health and Wellness, may differ from numbers of deaths and age-standardised mortality rates (ASMRs) reported by the BNR. MHW reports based on underlying cause of death and BNR reports all cases with cancer listed on the death certificate. All cases with cancer listed as a cause-of-death are treated as a death certificate notification and are investigated to determine the year of incidence.")
-              ),
-              h4(tags$strong("Data Analysis")),
               p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
       ),
       tabItem(tabName = "contact",
@@ -390,7 +389,7 @@ server <- function(input, output) {
   output$total_cases <- renderValueBox({
     valueBox(
       nrow(data),
-      "Total Cases (2013-2022)",
+      "Total Incidental Cases (2013-2022)",
       icon = icon("users"),
       color = "blue"
     )
@@ -416,11 +415,22 @@ server <- function(input, output) {
     )
   })
   
+  # Value box for average age of death moved to Home page
+  output$avg_age_death <- renderValueBox({
+    avg_age <- round(mean(mortality_data$age, na.rm = TRUE), 1)
+    valueBox(
+      avg_age,
+      "Average Age at Death",
+      icon = icon("user-times"),
+      color = "olive"
+    )
+  })
+  
   output$pediatric_cases <- renderValueBox({
     pediatric_pct <- round(100 * sum(data$age < 15, na.rm = TRUE) / nrow(data), 1)
     valueBox(
       paste0(pediatric_pct, "%"),
-      "Pediatric Cases (Age < 15)",
+      "Pediatric Incidental Cases (Age < 15)",
       icon = icon("child"),
       color = "purple"
     )
@@ -430,9 +440,31 @@ server <- function(input, output) {
     elderly_pct <- round(100 * sum(data$age >= 65, na.rm = TRUE) / nrow(data), 1)
     valueBox(
       paste0(elderly_pct, "%"),
-      "Elderly Cases (Age ≥ 65)",
+      "Elderly Incidental Cases (Age ≥ 65)",
       icon = icon("user-plus"),
       color = "orange"
+    )
+  })
+  
+  # Value box for pediatric deaths on the home page
+  output$pediatric_deaths <- renderValueBox({
+    pediatric_deaths_pct <- round(100 * sum(mortality_data$age < 15, na.rm = TRUE) / nrow(mortality_data), 1)
+    valueBox(
+      paste0(pediatric_deaths_pct, "%"),
+      "Pediatric Deaths (Age < 15)",
+      icon = icon("child"),
+      color = "maroon"
+    )
+  })
+  
+  # Value box for elderly deaths on the home page
+  output$elderly_deaths <- renderValueBox({
+    elderly_deaths_pct <- round(100 * sum(mortality_data$age >= 65, na.rm = TRUE) / nrow(mortality_data), 1)
+    valueBox(
+      paste0(elderly_deaths_pct, "%"),
+      "Elderly Deaths (Age ≥ 65)",
+      icon = icon("user-plus"),
+      color = "teal"
     )
   })
   
@@ -442,7 +474,7 @@ server <- function(input, output) {
       summarise(cases = n()) %>%
       ggplot(aes(x = dxyr, y = cases)) +
       geom_bar(stat = "identity", fill = "blue") +
-      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 5) +
       scale_x_continuous(breaks = seq(min(data$dxyr), max(data$dxyr), by = 1)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
@@ -479,6 +511,24 @@ server <- function(input, output) {
       rename(`Cancer Site` = siteiarc, Frequency = n)
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
+  output$top10_deaths_both_home <- DT::renderDataTable({
+    mortality_data %>%
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      rename(`Cancer Site` = siteiarc, Frequency = n)
+  }, options = list(pageLength = 10, searching = FALSE, dom = 't'))
+  
+  output$top10_deaths_elderly_home <- DT::renderDataTable({
+    mortality_data %>%
+      filter(age >= 65, !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      rename(`Cancer Site` = siteiarc, Frequency = n)
+  }, options = list(pageLength = 10, searching = FALSE, dom = 't'))
+  
   output$cases_by_parish <- renderPlot({
     data %>%
       filter(!is.na(parish), parish != "") %>%
@@ -486,7 +536,7 @@ server <- function(input, output) {
       summarise(cases = n()) %>%
       ggplot(aes(x = reorder(parish, -cases), y = cases)) +
       geom_bar(stat = "identity", fill = "darkgreen") +
-      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = cases, y = cases * 1.01), vjust = -0.5, size = 5) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
@@ -546,7 +596,7 @@ server <- function(input, output) {
       summarise(cases = n()) %>%
       ggplot(aes(x = dxyr, y = cases)) +
       geom_bar(stat = "identity", fill = "blue") +
-      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 5) +
       scale_x_continuous(breaks = seq(min(data$dxyr), max(data$dxyr), by = 1)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
@@ -590,7 +640,7 @@ server <- function(input, output) {
       summarise(cases = n()) %>%
       ggplot(aes(x = age_band, y = cases)) +
       geom_bar(stat = "identity", fill = "maroon4") +
-      geom_text(aes(label = cases, y = cases * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = cases, y = cases * 1.01), vjust = -0.5, size = 5) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
@@ -659,13 +709,25 @@ server <- function(input, output) {
     )
   })
   
-  output$avg_age_death <- renderValueBox({
-    avg_age <- round(mean(filtered_mort_data()$age, na.rm = TRUE), 1)
+  # New value box for female deaths on the mortality page
+  output$mort_female_deaths <- renderValueBox({
+    female_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Female"))
     valueBox(
-      avg_age,
-      "Average Age at Death",
-      icon = icon("user"),
-      color = "green"
+      female_deaths,
+      "Female Deaths",
+      icon = icon("venus"),
+      color = "maroon"
+    )
+  })
+  
+  # New value box for male deaths on the mortality page
+  output$mort_male_deaths <- renderValueBox({
+    male_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Male"))
+    valueBox(
+      male_deaths,
+      "Male Deaths",
+      icon = icon("mars"),
+      color = "blue"
     )
   })
   
@@ -679,7 +741,7 @@ server <- function(input, output) {
       summarise(deaths = n()) %>%
       ggplot(aes(x = dodyear, y = deaths)) +
       geom_bar(stat = "identity", fill = "red") +
-      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 5) +
       scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 1)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
@@ -775,7 +837,7 @@ server <- function(input, output) {
       summarise(deaths = n()) %>%
       ggplot(aes(x = age_band, y = deaths)) +
       geom_bar(stat = "identity", fill = "darkred") +
-      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 4) +
+      geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 5) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
@@ -1032,7 +1094,7 @@ server <- function(input, output) {
     } else {
       ggplot(surv_df, aes(x = age_band, y = surv_prob)) +
         geom_bar(stat = "identity", fill = "royalblue4") +
-        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 4) +
+        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 5) +
         theme_minimal() +
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
               axis.text.y = element_text(size = 12),
@@ -1051,7 +1113,7 @@ server <- function(input, output) {
     } else {
       ggplot(surv_df, aes(x = age_band, y = surv_prob)) +
         geom_bar(stat = "identity", fill = "springgreen4") +
-        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 4) +
+        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 5) +
         theme_minimal() +
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
               axis.text.y = element_text(size = 12),
@@ -1070,7 +1132,7 @@ server <- function(input, output) {
     } else {
       ggplot(surv_df, aes(x = age_band, y = surv_prob)) +
         geom_bar(stat = "identity", fill = "goldenrod4") +
-        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 4) +
+        geom_text(aes(label = round(surv_prob, 1), y = surv_prob + 2), vjust = -0.5, size = 5) +
         theme_minimal() +
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
               axis.text.y = element_text(size = 12),
