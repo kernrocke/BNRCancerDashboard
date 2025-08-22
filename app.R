@@ -1,4 +1,17 @@
-# app.R
+
+## HEADER -----------------------------------------------------
+##  R file METADATA
+##  algorithm name          cancer_dashboard / app.R
+##  project:                BNR
+##  analysts:               Kern Rocke
+##  date first created      18-AUG-2025
+## 	date last modified      22-AUG-2025
+##  algorithm task          Create HTN Dashboard for Barbados Cancer Registry
+##  status                  Completed
+##  objective               To have a dashboard for monitoring cancer registry data
+##  methods                 See additional information on dashboard. 
+
+
 # Required libraries
 library(shiny)
 library(shinydashboard)
