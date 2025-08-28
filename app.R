@@ -1,20 +1,21 @@
-
 ## HEADER -----------------------------------------------------
 ##  R file METADATA
 ##  algorithm name          cancer_dashboard / app.R
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-## 	date last modified      22-AUG-2025
+##  date last modified      27-AUG-2025
 ##  algorithm task          Create HTN Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
 ##  methods                 See additional information on dashboard. 
 
-
 # Required libraries
 library(shiny)
 library(shinydashboard)
+library(shinyauthr)
+library(shinyjs)
+library(sodium)
 library(dplyr)
 library(ggplot2)
 library(DT)
@@ -23,6 +24,12 @@ library(survival)
 library(plotly)
 library(tidyr)
 library(purrr)
+
+# User credentials
+user_base <- tibble::tibble(
+  user = "bnr_cancer",
+  password = sodium::password_store("cancer!001")
+)
 
 # Read the CSV files
 data <- read.csv("data/cancer_2013_2022_bnr.csv", stringsAsFactors = FALSE)
@@ -53,6 +60,7 @@ ui <- dashboardPage(
     )
   ),
   dashboardBody(
+    shinyjs::useShinyjs(),
     tags$head(
       tags$link(rel = "icon", type = "image/png", href = "bnr_logo.png"),
       tags$style(HTML("
@@ -61,345 +69,385 @@ ui <- dashboardPage(
         .both-table .dataTable th { background-color: #90EE90 !important; }
         .male-surv-table .dataTable th { background-color: #ADD8E6 !important; }
         .female-surv-table .dataTable th { background-color: #FFC1CC !important; }
-        .main-header .logo { width: 100% !important; text-align: centre; padding-left: 10px; background-color: #253494 !important; color: #FFFFFF !important; }
-        .collaborator-logo { display: block; margin: 9 auto 10px; height: 100px; width: auto; object-fit: contain; }
+        .main-header .logo { width: 100% !important; text-align: center; padding-left: 10px; background-color: #253494 !important; color: #FFFFFF !important; }
+        .collaborator-logo { display: block; margin: 10px auto; height: 100px; width: auto; object-fit: contain; }
         .collaborator-text { text-align: left; font-size: 16px; font-weight: bold; }
+        .login-container { max-width: 900px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
       "))
     ),
-    tabItems(
-      # Home page with infographic
-      tabItem(tabName = "home",
-              fluidRow(
-                valueBoxOutput("total_cases", width = 6),
-                valueBoxOutput("home_total_deaths", width = 6)
-              ),
-              fluidRow(
-                valueBoxOutput("avg_age", width = 6),
-                valueBoxOutput("avg_age_death", width = 6)
-              ),
-              fluidRow(
-                valueBoxOutput("pediatric_cases", width = 3),
-                valueBoxOutput("elderly_cases", width = 3),
-                valueBoxOutput("pediatric_deaths", width = 3),
-                valueBoxOutput("elderly_deaths", width = 3)
-              ),
-              fluidRow(
-                box(
-                  title = "Cases Over Years (2013-2022)",
-                  plotOutput("cases_over_years"),
-                  width = 6
-                ),
-                box(
-                  title = "Top Cancer Sites (2013-2022)",
-                  DT::dataTableOutput("top_sites"),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Top 5 Pediatric Cancer Sites (Age < 15) - 2013-2022",
-                  DT::dataTableOutput("top5_pediatric_sites"),
-                  width = 6
-                ),
-                box(
-                  title = "Top 5 Elderly Cancer Sites (Age ≥ 65) - 2013-2022",
-                  DT::dataTableOutput("top5_elderly_sites"),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Top 10 Cancer Deaths (2008-2024)",
-                  DT::dataTableOutput("top10_deaths_both_home"),
-                  width = 6
-                ),
-                box(
-                  title = "Top 10 Elderly Deaths (Age ≥ 65) - 2008-2024",
-                  DT::dataTableOutput("top10_deaths_elderly_home"),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Cases by Parish (2013-2022)",
-                  plotOutput("cases_by_parish"),
-                  width = 12
-                )
-              )
-      ),
-      
-      # Incidence page
-      tabItem(tabName = "incidence",
-              fluidRow(
-                column(4,
-                       selectInput("year_select", "Select Year:",
-                                   choices = c("All", sort(unique(data$dxyr))),
-                                   selected = "All")
-                ),
-                column(4,
-                       selectInput("site_select", "Select Cancer Site:",
-                                   choices = c("All", sort(unique(data$siteiarc))),
-                                   selected = "All")
-                )
-              ),
-              fluidRow(
-                valueBoxOutput("num_cases", width = 4),
-                valueBoxOutput("num_female_cases", width = 4),
-                valueBoxOutput("num_male_cases", width = 4)
-              ),
-              fluidRow(
-                box(
-                  title = "Cases by Year",
-                  plotOutput("bar_graph"),
-                  width = 6
-                ),
-                box(
-                  title = "Cases by Sex",
-                  plotOutput("sex_bar_graph"),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Top 10 Incidental Cancers",
-                  DT::dataTableOutput("top10_table"),
-                  width = 6
-                ),
-                box(
-                  title = "Top 5 Incidental Cancers by Sex",
-                  div(class = "female-table",
-                      h4("FEMALES"),
-                      DT::dataTableOutput("top5_female_table")
-                  ),
-                  div(class = "male-table",
-                      h4("MALES"),
-                      DT::dataTableOutput("top5_male_table")
-                  ),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Cases by 5-Year Age Bands",
-                  plotOutput("cases_by_age_bands"),
-                  width = 12
-                )
-              )
-      ),
-      
-      # Mortality page
-      tabItem(tabName = "mortality",
-              fluidRow(
-                column(4,
-                       selectInput("mort_year_select", "Select Year:",
-                                   choices = c("All", sort(unique(mortality_data$dodyear))),
-                                   selected = "All")
-                ),
-                column(4,
-                       selectInput("mort_site_select", "Select Cancer Site:",
-                                   choices = c("All", sort(unique(mortality_data$siteiarc))),
-                                   selected = "All")
-                )
-              ),
-              fluidRow(
-                valueBoxOutput("num_deaths", width = 4),
-                valueBoxOutput("mort_female_deaths", width = 4),
-                valueBoxOutput("mort_male_deaths", width = 4)
-              ),
-              fluidRow(
-                box(
-                  title = "Deaths by Year",
-                  plotOutput("deaths_by_year"),
-                  width = 6
-                ),
-                box(
-                  title = "Deaths by Year and Sex",
-                  plotOutput("deaths_by_sex"),
-                  width = 6
-                )
-              ),
-              fluidRow(
-                column(4, 
-                       box(title = "Top 10 Cancer Sites (Both Sexes)", 
-                           div(class = "both-table", DT::dataTableOutput("top_deaths_both")),
-                           width = NULL)
-                ),
-                column(4, 
-                       box(title = "Top 10 Cancer Sites (Females)", 
-                           div(class = "female-table", DT::dataTableOutput("top_deaths_female")),
-                           width = NULL)
-                ),
-                column(4, 
-                       box(title = "Top 10 Cancer Sites (Males)", 
-                           div(class = "male-table", DT::dataTableOutput("top_deaths_male")),
-                           width = NULL)
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "Deaths by 5-Year Age Bands",
-                  plotOutput("deaths_by_age_bands"),
-                  width = 12
-                )
-              )
-      ),
-      
-      # Survival page
-      tabItem(tabName = "survival",
-              h2("Survival Page"),
-              fluidRow(
-                column(6,
-                       selectInput("surv_year_select", "Select Year:",
-                                   choices = c("All", sort(unique(data$dxyr))),
-                                   selected = "All")
-                ),
-                column(6,
-                       selectInput("surv_site_select", "Select Cancer Site:",
-                                   choices = c("All", sort(unique(data$siteiarc))),
-                                   selected = "All")
-                )
-              ),
-              fluidRow(
-                column(4, plotlyOutput("gauge_1yr")),
-                column(4, plotlyOutput("gauge_3yr")),
-                column(4, plotlyOutput("gauge_5yr"))
-              ),
-              fluidRow(
-                box(
-                  title = "1-Year Survival by Age Band",
-                  plotOutput("surv_1yr_age"),
-                  width = 12
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "3-Year Survival by Age Band",
-                  plotOutput("surv_3yr_age"),
-                  width = 12
-                )
-              ),
-              fluidRow(
-                box(
-                  title = "5-Year Survival by Age Band",
-                  plotOutput("surv_5yr_age"),
-                  width = 12
-                )
-              ),
-              fluidRow(
-                column(4, 
-                       box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Both Sexes)", 
-                           div(class = "both-table", DT::dataTableOutput("top_survival_both")),
-                           width = NULL)
-                ),
-                column(4, 
-                       box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Males)", 
-                           div(class = "male-surv-table", DT::dataTableOutput("top_survival_male")),
-                           width = NULL)
-                ),
-                column(4, 
-                       box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Females)", 
-                           div(class = "female-surv-table", DT::dataTableOutput("top_survival_female")),
-                           width = NULL)
-                )
-              )
-      ),
-      
-      # Placeholder for other pages
-      tabItem(tabName = "projection",
-              h2("Projection Page"),
-              p(tags$strong("COMING SOON."))
-      ),
-      tabItem(tabName = "reports",
-              h2("Reports Page"),
-              fluidRow(
-                box(
-                  title = "Cancer Reports",
-                  DT::dataTableOutput("reports_table"),
-                  width = 12
-                )
-              )
-      ),
-      tabItem(tabName = "additional",
-              h2(tags$strong("Additional Information")),
-              h3(tags$strong("BNR Cancer Registry Online Dashboard Release Notes")),
-              p("The data presented in the BNR Cancer Registry Online Dashboard can be used to examine the current landscape of cancer in Barbados, estimate disease burden, follow trends over time, and make comparisons across different cancer types, demographic groups, and geographic areas."),
-              h3(tags$strong("Table of Contents:")),
-              tags$ol(
-                tags$li("Data Availability"),
-                tags$li("Definitions"),
-                tags$li("Data Quality")
-              ),
-              h4(tags$strong("Data Availability")),
-              p("The BNR Cancer Registry Dashboard is updated on a periodic basis. The current release (September 2025) of this dashboard includes data up to the end of diagnosis year 2023. Due to standard delays in the capture and coding of cancer cases, the BNR Cancer Registry data are currently considered complete for cases up to the end of 2023."),
-              p("Dashboard reports for outcomes (survival, lifetime risk) are updated periodically (last updated using 2022 incidence data)."),
-              p("Average Annual Percent Change (AAPC) reported in age-standardized cancer incidence are reported using data up to the end of 2022."),
-              h4(tags$strong("Definitions")),
-              p("An incidence rate is the number of new disease events occurring in a specified population during a year, usually expressed as the number of events per 100,000 population at risk. That is,"),
-              p(tags$strong("Incidence rate = (new events / population) × 100,000")),
-              p("The numerator of the incidence rate is the number of new disease events; the denominator is the size of the population. The number of new events may include multiple events occurring in one patient. In general, the incidence rate does not include recurrences (where recurrence is defined as a presentation to the healthcare system within a certain period of the initiating event)."),
-              p("The age standardised rate is the proportion of cases (or deaths) in a given population (and year) weighted by the age structure of the population. For incidence (ASIR) and mortality (ASMR) calculations, cases and deaths were weighted by the WHO World Standard population."),
-              p("A mortality rate is the number of deaths, in which the disease (cancer) was the underlying cause of death, occurring in a specified population during a year. Mortality is usually expressed as the number of deaths due to the disease per 100,000 population. That is,"),
-              p(tags$strong("Mortality rate = (disease deaths/population) × 100,000")),
-              p("The numerator of the mortality rate is the number of deaths; the denominator is the size of the population."),
-              h5("Case Definitions"),
-              p("Case definition for 2008 diagnoses: “All in-situ and malignant neoplasms with a behaviour code of 2 or 3 according to the International Classification of Diseases for Oncology, 3rd Edition (ICD-O-3) as well as benign tumours of the brain & other parts of CNS, pituitary gland, craniopharyngeal duct and the pineal gland (behaviour code of 0 or 1).”"),
-              p("Case definition for 2013 onwards diagnoses: “All malignant neoplasms with a behaviour code of 3 according to the ICD-O-3 and in-situ neoplasms of the cervix only (CIN3). Exclude all other in-situ neoplasms and basal cell and squamous cell carcinoma of skin, non-genital areas”."),
-              p("The case definition for 2014 onwards remains the same as 2013 but was reworded to: Data were collected on all malignant neoplasms with a behaviour code of 3, according to the International Classification of Diseases for Oncology, 3rd Edition 1st Revision (ICD-O-3.1), as well as in situ neoplasms of the cervix only (CIN 3) diagnosed in 2014."),
-              h5(tags$strong("Residency")),
-              p("‘Usual Residence’ used in the Population and Housing Census is as follows:"),
-              p("Usual Residence – This is defined as the place where a person being enumerated lives and sleeps most of the time."),
-              tags$ol(
-                tags$li("For persons with more than one home, usual residence will be the one at which the person spends the greater part of the year. Thus, for an individual who has more than one place of residence because his workplace or school is away from home, the usual residence should be that place in which he/she spends at least four nights of the week."),
-                tags$li("Fishermen at sea are considered to have their place of usual residence where they dwell when on shore."),
-                tags$li("Barbadians in the farm labour programme were enumerated in their usual households; seamen or crewmembers on vessels plying foreign ports should record as their usual residence the place where they stay when on shore."),
-                tags$li("Aircraft pilots are considered to have their usual residence in the households in which they dwell."),
-                tags$li("Foreign diplomats are the usual residents of the countries they represent and were not enumerated.")
-              ),
-              h4(tags$strong("Data Quality")),
-              p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
-      ),
-      tabItem(tabName = "contact",
-              h2(tags$strong("Contact Us")),
-              p("Contact information for inquiries."),
-              p(" "),
-              p(" "),
-              h2(tags$strong("The Barbados National Registry (BNR)")),
-              p("The George Alleyne Chronic Disease Research Centre"),
-              p("UWI Avalon"),
-              p("Jemmotts Lane"),
-              p("Bridgetown"),
-              p("Barbados, W.I."),
-              p("Tel: 246-426-6416"),
-              p("Fax: 246-426-8406"),
-              p("Email: bnr.uwi.edu"),
-              h2(tags$strong("Collaborators")),
-              fluidRow(
-                column(8,
-                       img(src = "moh_logo.png", class = "collaborator-logo"),
-                       p(class = "collaborator-text", "Ministry of Health and Wellness")
-                ),
-                column(8,
-                       img(src = "cdcc_logo.png", class = "collaborator-logo"),
-                       p(class = "collaborator-text", "The George Alleyne Chronic Disease Research Centre")
-                ),
-                column(8,
-                       img(src = "cahir_logo.png", class = "collaborator-logo"),
-                       p(class = "collaborator-text", "The Caribbean Institute for Health Research")
-                ),
-                column(8,
-                       img(src = "uwi_logo.png", class = "collaborator-logo"),
-                       p(class = "collaborator-text", "The University of the West Indies, Cave Hill Campus")
-                )
-              )
+    div(id = "loginpage",
+        class = "login-container",
+        div(id = "login_text", 
+            style = "font-size: 1.3em;", 
+            div(style = "text-align: center;", h1(tags$strong("Welcome to the Barbados National Cancer Registry Data Dashboard."))),
+            p("This secure portal provides authorized users with access to comprehensive cancer registry data for the nation of Barbados. The dashboard is a vital tool for public health professionals, researchers, and policymakers, enabling data-driven insights to improve cancer prevention, treatment, and control efforts."),
+            p("Please log in using your credentials to access the full range of data, reports, and analytical tools."),
+            p(tags$strong("Forgot your password?"), " Please contact your system administrator for assistance.")
+        ),
+        shinyauthr::loginUI(
+          id = "login_form",
+          title = "BNR Cancer Registry Dashboard Login",
+          user_title = "Username",
+          pass_title = "Password",
+          login_title = "Log in",
+          error_message = "Invalid username or password"
+        )
+    ),
+    shinyjs::hidden(
+      div(id = "dashboard_content",
+          tabItems(
+            # Home page with infographic
+            tabItem(tabName = "home",
+                    fluidRow(
+                      valueBoxOutput("total_cases", width = 6),
+                      valueBoxOutput("home_total_deaths", width = 6)
+                    ),
+                    fluidRow(
+                      valueBoxOutput("avg_age", width = 6),
+                      valueBoxOutput("avg_age_death", width = 6)
+                    ),
+                    fluidRow(
+                      valueBoxOutput("pediatric_cases", width = 3),
+                      valueBoxOutput("elderly_cases", width = 3),
+                      valueBoxOutput("pediatric_deaths", width = 3),
+                      valueBoxOutput("elderly_deaths", width = 3)
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Cases Over Years (2013-2022)",
+                        plotOutput("cases_over_years"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Top Cancer Sites (2013-2022)",
+                        DT::dataTableOutput("top_sites"),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Top 5 Pediatric Cancer Sites (Age < 15) - 2013-2022",
+                        DT::dataTableOutput("top5_pediatric_sites"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Top 5 Elderly Cancer Sites (Age ≥ 65) - 2013-2022",
+                        DT::dataTableOutput("top5_elderly_sites"),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Top 10 Cancer Deaths (2008-2024)",
+                        DT::dataTableOutput("top10_deaths_both_home"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Top 10 Elderly Deaths (Age ≥ 65) - 2008-2024",
+                        DT::dataTableOutput("top10_deaths_elderly_home"),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Cases by Parish (2013-2022)",
+                        plotOutput("cases_by_parish"),
+                        width = 12
+                      )
+                    )
+            ),
+            # Incidence page
+            tabItem(tabName = "incidence",
+                    fluidRow(
+                      column(4,
+                             selectInput("year_select", "Select Year:",
+                                         choices = c("All", sort(unique(data$dxyr))),
+                                         selected = "All")
+                      ),
+                      column(4,
+                             selectInput("site_select", "Select Cancer Site:",
+                                         choices = c("All", sort(unique(data$siteiarc))),
+                                         selected = "All")
+                      )
+                    ),
+                    fluidRow(
+                      valueBoxOutput("num_cases", width = 4),
+                      valueBoxOutput("num_female_cases", width = 4),
+                      valueBoxOutput("num_male_cases", width = 4)
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Cases by Year",
+                        plotOutput("bar_graph"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Cases by Sex",
+                        plotOutput("sex_bar_graph"),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Top 10 Incidental Cancers",
+                        DT::dataTableOutput("top10_table"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Top 5 Incidental Cancers by Sex",
+                        div(class = "female-table",
+                            h4("FEMALES"),
+                            DT::dataTableOutput("top5_female_table")
+                        ),
+                        div(class = "male-table",
+                            h4("MALES"),
+                            DT::dataTableOutput("top5_male_table")
+                        ),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Cases by 5-Year Age Bands",
+                        plotOutput("cases_by_age_bands"),
+                        width = 12
+                      )
+                    )
+            ),
+            # Mortality page
+            tabItem(tabName = "mortality",
+                    fluidRow(
+                      column(4,
+                             selectInput("mort_year_select", "Select Year:",
+                                         choices = c("All", sort(unique(mortality_data$dodyear))),
+                                         selected = "All")
+                      ),
+                      column(4,
+                             selectInput("mort_site_select", "Select Cancer Site:",
+                                         choices = c("All", sort(unique(mortality_data$siteiarc))),
+                                         selected = "All")
+                      )
+                    ),
+                    fluidRow(
+                      valueBoxOutput("num_deaths", width = 4),
+                      valueBoxOutput("mort_female_deaths", width = 4),
+                      valueBoxOutput("mort_male_deaths", width = 4)
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Deaths by Year",
+                        plotOutput("deaths_by_year"),
+                        width = 6
+                      ),
+                      box(
+                        title = "Deaths by Year and Sex",
+                        plotOutput("deaths_by_sex"),
+                        width = 6
+                      )
+                    ),
+                    fluidRow(
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites (Both Sexes)", 
+                                 div(class = "both-table", DT::dataTableOutput("top_deaths_both")),
+                                 width = NULL)
+                      ),
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites (Females)", 
+                                 div(class = "female-table", DT::dataTableOutput("top_deaths_female")),
+                                 width = NULL)
+                      ),
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites (Males)", 
+                                 div(class = "male-table", DT::dataTableOutput("top_deaths_male")),
+                                 width = NULL)
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Deaths by 5-Year Age Bands",
+                        plotOutput("deaths_by_age_bands"),
+                        width = 12
+                      )
+                    )
+            ),
+            # Survival page
+            tabItem(tabName = "survival",
+                    h2("Survival Page"),
+                    fluidRow(
+                      column(6,
+                             selectInput("surv_year_select", "Select Year:",
+                                         choices = c("All", sort(unique(data$dxyr))),
+                                         selected = "All")
+                      ),
+                      column(6,
+                             selectInput("surv_site_select", "Select Cancer Site:",
+                                         choices = c("All", sort(unique(data$siteiarc))),
+                                         selected = "All")
+                      )
+                    ),
+                    fluidRow(
+                      column(4, plotlyOutput("gauge_1yr")),
+                      column(4, plotlyOutput("gauge_3yr")),
+                      column(4, plotlyOutput("gauge_5yr"))
+                    ),
+                    fluidRow(
+                      box(
+                        title = "1-Year Survival by Age Band",
+                        plotOutput("surv_1yr_age"),
+                        width = 12
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "3-Year Survival by Age Band",
+                        plotOutput("surv_3yr_age"),
+                        width = 12
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "5-Year Survival by Age Band",
+                        plotOutput("surv_5yr_age"),
+                        width = 12
+                      )
+                    ),
+                    fluidRow(
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Both Sexes)", 
+                                 div(class = "both-table", DT::dataTableOutput("top_survival_both")),
+                                 width = NULL)
+                      ),
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Males)", 
+                                 div(class = "male-surv-table", DT::dataTableOutput("top_survival_male")),
+                                 width = NULL)
+                      ),
+                      column(4, 
+                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Females)", 
+                                 div(class = "female-surv-table", DT::dataTableOutput("top_survival_female")),
+                                 width = NULL)
+                      )
+                    )
+            ),
+            # Placeholder for other pages
+            tabItem(tabName = "projection",
+                    h2("Projection Page"),
+                    p(tags$strong("COMING SOON."))
+            ),
+            tabItem(tabName = "reports",
+                    h2("Reports Page"),
+                    fluidRow(
+                      box(
+                        title = "Cancer Reports",
+                        DT::dataTableOutput("reports_table"),
+                        width = 12
+                      )
+                    )
+            ),
+            tabItem(tabName = "additional",
+                    h2(tags$strong("Additional Information")),
+                    h3(tags$strong("BNR Cancer Registry Online Dashboard Release Notes")),
+                    p("The data presented in the BNR Cancer Registry Online Dashboard can be used to examine the current landscape of cancer in Barbados, estimate disease burden, follow trends over time, and make comparisons across different cancer types, demographic groups, and geographic areas."),
+                    h3(tags$strong("Table of Contents:")),
+                    tags$ol(
+                      tags$li("Data Availability"),
+                      tags$li("Definitions"),
+                      tags$li("Data Quality")
+                    ),
+                    h4(tags$strong("Data Availability")),
+                    p("The BNR Cancer Registry Dashboard is updated on a periodic basis. The current release (September 2025) of this dashboard includes data up to the end of diagnosis year 2023. Due to standard delays in the capture and coding of cancer cases, the BNR Cancer Registry data are currently considered complete for cases up to the end of 2023."),
+                    p("Dashboard reports for outcomes (survival, lifetime risk) are updated periodically (last updated using 2022 incidence data)."),
+                    p("Average Annual Percent Change (AAPC) reported in age-standardized cancer incidence are reported using data up to the end of 2022."),
+                    h4(tags$strong("Definitions")),
+                    p("An incidence rate is the number of new disease events occurring in a specified population during a year, usually expressed as the number of events per 100,000 population at risk. That is,"),
+                    p(tags$strong("Incidence rate = (new events / population) × 100,000")),
+                    p("The numerator of the incidence rate is the number of new disease events; the denominator is the size of the population. The number of new events may include multiple events occurring in one patient. In general, the incidence rate does not include recurrences (where recurrence is defined as a presentation to the healthcare system within a certain period of the initiating event)."),
+                    p("The age standardised rate is the proportion of cases (or deaths) in a given population (and year) weighted by the age structure of the population. For incidence (ASIR) and mortality (ASMR) calculations, cases and deaths were weighted by the WHO World Standard population."),
+                    p("A mortality rate is the number of deaths, in which the disease (cancer) was the underlying cause of death, occurring in a specified population during a year. Mortality is usually expressed as the number of deaths due to the disease per 100,000 population. That is,"),
+                    p(tags$strong("Mortality rate = (disease deaths/population) × 100,000")),
+                    p("The numerator of the mortality rate is the number of deaths; the denominator is the size of the population."),
+                    h5("Case Definitions"),
+                    p("Case definition for 2008 diagnoses: “All in-situ and malignant neoplasms with a behaviour code of 2 or 3 according to the International Classification of Diseases for Oncology, 3rd Edition (ICD-O-3) as well as benign tumours of the brain & other parts of CNS, pituitary gland, craniopharyngeal duct and the pineal gland (behaviour code of 0 or 1).”"),
+                    p("Case definition for 2013 onwards diagnoses: “All malignant neoplasms with a behaviour code of 3 according to the ICD-O-3 and in-situ neoplasms of the cervix only (CIN3). Exclude all other in-situ neoplasms and basal cell and squamous cell carcinoma of skin, non-genital areas”."),
+                    p("The case definition for 2014 onwards remains the same as 2013 but was reworded to: Data were collected on all malignant neoplasms with a behaviour code of 3, according to the International Classification of Diseases for Oncology, 3rd Edition 1st Revision (ICD-O-3.1), as well as in situ neoplasms of the cervix only (CIN 3) diagnosed in 2014."),
+                    h5(tags$strong("Residency")),
+                    p("‘Usual Residence’ used in the Population and Housing Census is as follows:"),
+                    p("Usual Residence – This is defined as the place where a person being enumerated lives and sleeps most of the time."),
+                    tags$ol(
+                      tags$li("For persons with more than one home, usual residence will be the one at which the person spends the greater part of the year. Thus, for an individual who has more than one place of residence because his workplace or school is away from home, the usual residence should be that place in which he/she spends at least four nights of the week."),
+                      tags$li("Fishermen at sea are considered to have their place of usual residence where they dwell when on shore."),
+                      tags$li("Barbadians in the farm labour programme were enumerated in their usual households; seamen or crewmembers on vessels plying foreign ports should record as their usual residence the place where they stay when on shore."),
+                      tags$li("Aircraft pilots are considered to have their usual residence in the households in which they dwell."),
+                      tags$li("Foreign diplomats are the usual residents of the countries they represent and were not enumerated.")
+                    ),
+                    h4(tags$strong("Data Quality")),
+                    p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
+            ),
+            tabItem(tabName = "contact",
+                    h2(tags$strong("Contact Us")),
+                    p("Contact information for inquiries."),
+                    p(" "),
+                    p(" "),
+                    h2(tags$strong("The Barbados National Registry (BNR)")),
+                    p("The George Alleyne Chronic Disease Research Centre"),
+                    p("UWI Avalon"),
+                    p("Jemmotts Lane"),
+                    p("Bridgetown"),
+                    p("Barbados, W.I."),
+                    p("Tel: 246-426-6416"),
+                    p("Fax: 246-426-8406"),
+                    p("Email: bnr.uwi.edu"),
+                    h2(tags$strong("Collaborators")),
+                    fluidRow(
+                      column(1,
+                             img(src = "moh_logo.png", class = "collaborator-logo"),
+                             p(class = "collaborator-text", "Ministry of Health and Wellness")
+                      ),
+                      column(2,
+                             img(src = "cdcc_logo.png", class = "collaborator-logo"),
+                             p(class = "collaborator-text", "The George Alleyne Chronic Disease Research Centre")
+                      ),
+                      column(3,
+                             img(src = "cahir_logo.png", class = "collaborator-logo"),
+                             p(class = "collaborator-text", "The Caribbean Institute for Health Research")
+                      ),
+                      column(2,
+                             img(src = "uwi_logo.png", class = "collaborator-logo"),
+                             p(class = "collaborator-text", "The University of the West Indies, Cave Hill Campus")
+                      )
+                    )
+            )
+          )
       )
     )
   )
 )
 
-server <- function(input, output) {
+server <- function(input, output, session) {
+  
+  # Handle authentication
+  credentials <- shinyauthr::loginServer(
+    id = "login_form",
+    data = user_base,
+    user_col = user,
+    pwd_col = password,
+    sodium_hashed = TRUE,
+    log_out = reactive(NULL)
+  )
+  
+  observe({
+    if (credentials()$user_auth) {
+      shinyjs::hide("loginpage")
+      shinyjs::show("dashboard_content")
+    } else {
+      shinyjs::show("loginpage")
+      shinyjs::hide("dashboard_content")
+    }
+  })
   
   # Home infographic calculations
   output$total_cases <- renderValueBox({
+    req(credentials()$user_auth)
     valueBox(
       nrow(data),
       "Total Incidental Cases (2013-2022)",
@@ -408,8 +456,8 @@ server <- function(input, output) {
     )
   })
   
-  # New value box for total deaths on the home page
   output$home_total_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     valueBox(
       nrow(mortality_data),
       "Total Deaths (2008-2024)",
@@ -419,6 +467,7 @@ server <- function(input, output) {
   })
   
   output$avg_age <- renderValueBox({
+    req(credentials()$user_auth)
     avg_age <- round(mean(data$age, na.rm = TRUE), 1)
     valueBox(
       avg_age,
@@ -428,8 +477,8 @@ server <- function(input, output) {
     )
   })
   
-  # Value box for average age of death moved to Home page
   output$avg_age_death <- renderValueBox({
+    req(credentials()$user_auth)
     avg_age <- round(mean(mortality_data$age, na.rm = TRUE), 1)
     valueBox(
       avg_age,
@@ -440,6 +489,7 @@ server <- function(input, output) {
   })
   
   output$pediatric_cases <- renderValueBox({
+    req(credentials()$user_auth)
     pediatric_pct <- round(100 * sum(data$age < 15, na.rm = TRUE) / nrow(data), 1)
     valueBox(
       paste0(pediatric_pct, "%"),
@@ -450,6 +500,7 @@ server <- function(input, output) {
   })
   
   output$elderly_cases <- renderValueBox({
+    req(credentials()$user_auth)
     elderly_pct <- round(100 * sum(data$age >= 65, na.rm = TRUE) / nrow(data), 1)
     valueBox(
       paste0(elderly_pct, "%"),
@@ -459,8 +510,8 @@ server <- function(input, output) {
     )
   })
   
-  # Value box for pediatric deaths on the home page
   output$pediatric_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     pediatric_deaths_pct <- round(100 * sum(mortality_data$age < 15, na.rm = TRUE) / nrow(mortality_data), 1)
     valueBox(
       paste0(pediatric_deaths_pct, "%"),
@@ -470,8 +521,8 @@ server <- function(input, output) {
     )
   })
   
-  # Value box for elderly deaths on the home page
   output$elderly_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     elderly_deaths_pct <- round(100 * sum(mortality_data$age >= 65, na.rm = TRUE) / nrow(mortality_data), 1)
     valueBox(
       paste0(elderly_deaths_pct, "%"),
@@ -482,6 +533,7 @@ server <- function(input, output) {
   })
   
   output$cases_over_years <- renderPlot({
+    req(credentials()$user_auth)
     data %>%
       group_by(dxyr) %>%
       summarise(cases = n()) %>%
@@ -498,6 +550,7 @@ server <- function(input, output) {
   })
   
   output$top_sites <- DT::renderDataTable({
+    req(credentials()$user_auth)
     data %>%
       filter(siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
@@ -507,6 +560,7 @@ server <- function(input, output) {
   })
   
   output$top5_pediatric_sites <- DT::renderDataTable({
+    req(credentials()$user_auth)
     data %>%
       filter(age < 15, siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
@@ -516,6 +570,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
   output$top5_elderly_sites <- DT::renderDataTable({
+    req(credentials()$user_auth)
     data %>%
       filter(age >= 65, siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
@@ -525,6 +580,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
   output$top10_deaths_both_home <- DT::renderDataTable({
+    req(credentials()$user_auth)
     mortality_data %>%
       filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
@@ -534,6 +590,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 10, searching = FALSE, dom = 't'))
   
   output$top10_deaths_elderly_home <- DT::renderDataTable({
+    req(credentials()$user_auth)
     mortality_data %>%
       filter(age >= 65, !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
@@ -543,6 +600,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 10, searching = FALSE, dom = 't'))
   
   output$cases_by_parish <- renderPlot({
+    req(credentials()$user_auth)
     data %>%
       filter(!is.na(parish), parish != "") %>%
       group_by(parish) %>%
@@ -560,6 +618,7 @@ server <- function(input, output) {
   
   # Incidence page
   filtered_data <- reactive({
+    req(credentials()$user_auth)
     df <- data
     if (input$year_select != "All") {
       df <- df %>% filter(dxyr == as.integer(input$year_select))
@@ -571,6 +630,7 @@ server <- function(input, output) {
   })
   
   output$num_cases <- renderValueBox({
+    req(credentials()$user_auth)
     valueBox(
       nrow(filtered_data()),
       "Number of Cases",
@@ -580,6 +640,7 @@ server <- function(input, output) {
   })
   
   output$num_female_cases <- renderValueBox({
+    req(credentials()$user_auth)
     female_cases <- nrow(filtered_data() %>% filter(sex == "female"))
     valueBox(
       female_cases,
@@ -590,6 +651,7 @@ server <- function(input, output) {
   })
   
   output$num_male_cases <- renderValueBox({
+    req(credentials()$user_auth)
     male_cases <- nrow(filtered_data() %>% filter(sex == "male"))
     valueBox(
       male_cases,
@@ -600,6 +662,7 @@ server <- function(input, output) {
   })
   
   output$bar_graph <- renderPlot({
+    req(credentials()$user_auth)
     df <- data
     if (input$site_select != "All") {
       df <- df %>% filter(siteiarc == input$site_select)
@@ -620,6 +683,7 @@ server <- function(input, output) {
   })
   
   output$sex_bar_graph <- renderPlot({
+    req(credentials()$user_auth)
     df <- data
     if (input$site_select != "All") {
       df <- df %>% filter(siteiarc == input$site_select)
@@ -640,6 +704,7 @@ server <- function(input, output) {
   })
   
   output$cases_by_age_bands <- renderPlot({
+    req(credentials()$user_auth)
     df <- filtered_data()
     df %>%
       mutate(age_band = cut(age, 
@@ -663,6 +728,7 @@ server <- function(input, output) {
   })
   
   output$top10_table <- DT::renderDataTable({
+    req(credentials()$user_auth)
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -676,6 +742,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 10, searching = FALSE))
   
   output$top5_female_table <- DT::renderDataTable({
+    req(credentials()$user_auth)
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -689,6 +756,7 @@ server <- function(input, output) {
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
   output$top5_male_table <- DT::renderDataTable({
+    req(credentials()$user_auth)
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -703,6 +771,7 @@ server <- function(input, output) {
   
   # Mortality page
   filtered_mort_data <- reactive({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_year_select != "All") {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
@@ -714,6 +783,7 @@ server <- function(input, output) {
   })
   
   output$num_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     valueBox(
       nrow(filtered_mort_data()),
       "Number of Deaths (2008-2024)",
@@ -722,8 +792,8 @@ server <- function(input, output) {
     )
   })
   
-  # New value box for female deaths on the mortality page
   output$mort_female_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     female_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Female"))
     valueBox(
       female_deaths,
@@ -733,8 +803,8 @@ server <- function(input, output) {
     )
   })
   
-  # New value box for male deaths on the mortality page
   output$mort_male_deaths <- renderValueBox({
+    req(credentials()$user_auth)
     male_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Male"))
     valueBox(
       male_deaths,
@@ -745,6 +815,7 @@ server <- function(input, output) {
   })
   
   output$deaths_by_year <- renderPlot({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_site_select != "All") {
       df <- df %>% filter(siteiarc == input$mort_site_select)
@@ -765,6 +836,7 @@ server <- function(input, output) {
   })
   
   output$deaths_by_sex <- renderPlot({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_site_select != "All") {
       df <- df %>% filter(siteiarc == input$mort_site_select)
@@ -786,6 +858,7 @@ server <- function(input, output) {
   })
   
   top_deaths_both <- reactive({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_year_select != "All") {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
@@ -799,10 +872,12 @@ server <- function(input, output) {
   })
   
   output$top_deaths_both <- DT::renderDataTable({
+    req(credentials()$user_auth)
     top_deaths_both()
   }, options = list(pageLength = 10, searching = FALSE))
   
   top_deaths_female <- reactive({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_year_select != "All") {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
@@ -816,10 +891,12 @@ server <- function(input, output) {
   })
   
   output$top_deaths_female <- DT::renderDataTable({
+    req(credentials()$user_auth)
     top_deaths_female()
   }, options = list(pageLength = 10, searching = FALSE))
   
   top_deaths_male <- reactive({
+    req(credentials()$user_auth)
     df <- mortality_data
     if (input$mort_year_select != "All") {
       df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
@@ -833,10 +910,12 @@ server <- function(input, output) {
   })
   
   output$top_deaths_male <- DT::renderDataTable({
+    req(credentials()$user_auth)
     top_deaths_male()
   }, options = list(pageLength = 10, searching = FALSE))
   
   output$deaths_by_age_bands <- renderPlot({
+    req(credentials()$user_auth)
     df <- filtered_mort_data()
     df %>%
       mutate(age_band = cut(age, 
@@ -861,6 +940,7 @@ server <- function(input, output) {
   
   # Reports page
   reports_data <- reactive({
+    req(credentials()$user_auth)
     data.frame(
       Report_Name = c(
         "Cancer in Barbados 2008: Annual Report of the BNR-Cancer",
@@ -896,9 +976,9 @@ server <- function(input, output) {
       ),
       stringsAsFactors = FALSE
     )
-  })
-  
+  })  
   output$reports_table <- DT::renderDataTable({
+    req(credentials()$user_auth)
     datatable(
       reports_data(),
       options = list(
@@ -921,10 +1001,9 @@ server <- function(input, output) {
         )
       ),
       escape = FALSE,
-      colnames = c("Repor Name", "Cancer Reporting Period", "", "Download")
+      colnames = c("Report Name", "Cancer Reporting Period", "", "Download")
     )
-  })
-  
+  })  
   # Survival page
   parse_incidence <- function(x) {
     x <- as.character(x)
@@ -947,6 +1026,7 @@ server <- function(input, output) {
   }
   
   year_filtered <- reactive({
+    req(credentials()$user_auth)
     df <- data
     if (input$surv_year_select != "All") {
       df <- df %>% filter(dxyr == as.integer(input$surv_year_select))
@@ -963,6 +1043,7 @@ server <- function(input, output) {
   })
   
   surv_per_site_both <- reactive({
+    req(credentials()$user_auth)
     df <- year_filtered()
     if (nrow(df) == 0) return(data.frame(`Cancer Site` = character(), `5-Year Survival (%)` = numeric(), Cases = numeric()))
     df_nested <- df %>% 
@@ -987,6 +1068,7 @@ server <- function(input, output) {
   })
   
   surv_per_site_male <- reactive({
+    req(credentials()$user_auth)
     df <- year_filtered() %>% filter(sex == "male")
     if (nrow(df) == 0) return(data.frame(`Cancer Site` = character(), `5-Year Survival (%)` = numeric(), Cases = numeric()))
     df_nested <- df %>% 
@@ -1011,6 +1093,7 @@ server <- function(input, output) {
   })
   
   surv_per_site_female <- reactive({
+    req(credentials()$user_auth)
     df <- year_filtered() %>% filter(sex == "female")
     if (nrow(df) == 0) return(data.frame(`Cancer Site` = character(), `5-Year Survival (%)` = numeric(), Cases = numeric()))
     df_nested <- df %>% 
@@ -1035,18 +1118,22 @@ server <- function(input, output) {
   })
   
   output$top_survival_both <- DT::renderDataTable({
+    req(credentials()$user_auth)
     surv_per_site_both()
   }, options = list(pageLength = 10, searching = FALSE))
   
   output$top_survival_male <- DT::renderDataTable({
+    req(credentials()$user_auth)
     surv_per_site_male()
   }, options = list(pageLength = 10, searching = FALSE))
   
   output$top_survival_female <- DT::renderDataTable({
+    req(credentials()$user_auth)
     surv_per_site_female()
   }, options = list(pageLength = 10, searching = FALSE))
   
   surv_filtered_data <- reactive({
+    req(credentials()$user_auth)
     df <- data
     if (input$surv_year_select != "All") {
       df <- df %>% filter(dxyr == as.integer(input$surv_year_select))
@@ -1066,6 +1153,7 @@ server <- function(input, output) {
   })
   
   surv_data_with_age <- reactive({
+    req(credentials()$user_auth)
     df <- surv_filtered_data()
     df %>%
       mutate(age_band = cut(age, 
@@ -1100,6 +1188,7 @@ server <- function(input, output) {
   }
   
   output$surv_1yr_age <- renderPlot({
+    req(credentials()$user_auth)
     df <- surv_data_with_age()
     surv_df <- surv_by_age(df, 1)
     if (nrow(surv_df) == 0) {
@@ -1119,6 +1208,7 @@ server <- function(input, output) {
   })
   
   output$surv_3yr_age <- renderPlot({
+    req(credentials()$user_auth)
     df <- surv_data_with_age()
     surv_df <- surv_by_age(df, 3)
     if (nrow(surv_df) == 0) {
@@ -1138,6 +1228,7 @@ server <- function(input, output) {
   })
   
   output$surv_5yr_age <- renderPlot({
+    req(credentials()$user_auth)
     df <- surv_data_with_age()
     surv_df <- surv_by_age(df, 5)
     if (nrow(surv_df) == 0) {
@@ -1157,6 +1248,7 @@ server <- function(input, output) {
   })
   
   surv_probs <- reactive({
+    req(credentials()$user_auth)
     surv_data <- surv_filtered_data()
     if (nrow(surv_data) < 2) return(rep(NA, 3))  # Require at least 2 cases
     fit <- tryCatch({
@@ -1182,6 +1274,7 @@ server <- function(input, output) {
   })
   
   output$gauge_1yr <- renderPlotly({
+    req(credentials()$user_auth)
     percent <- surv_probs()[1]
     if (is.na(percent)) {
       plot_ly(type = "scatter", mode = "text") %>%
@@ -1214,6 +1307,7 @@ server <- function(input, output) {
   })
   
   output$gauge_3yr <- renderPlotly({
+    req(credentials()$user_auth)
     percent <- surv_probs()[2]
     if (is.na(percent)) {
       plot_ly(type = "scatter", mode = "text") %>%
@@ -1246,6 +1340,7 @@ server <- function(input, output) {
   })
   
   output$gauge_5yr <- renderPlotly({
+    req(credentials()$user_auth)
     percent <- surv_probs()[3]
     if (is.na(percent)) {
       plot_ly(type = "scatter", mode = "text") %>%
