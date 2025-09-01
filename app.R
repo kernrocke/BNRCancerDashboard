@@ -24,6 +24,7 @@ library(survival)
 library(plotly)
 library(tidyr)
 library(purrr)
+library(readxl)
 
 # User credentials
 user_base <- tibble::tibble(
@@ -34,6 +35,109 @@ user_base <- tibble::tibble(
 # Read the CSV files
 data <- read.csv("data/cancer_2013_2022_bnr.csv", stringsAsFactors = FALSE)
 mortality_data <- read.csv("data/cancer_death_2008_2024.csv", stringsAsFactors = FALSE)
+
+# Load population data from WPP.xlsx
+years <- c(2008, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023)
+pop_data <- map2_dfr(seq_along(years), years, ~{
+  read_excel("data/WPP.xlsx", sheet = .x) %>%
+    mutate(year = .y)
+})
+pop_data$sex <- ifelse(pop_data$sex == 1, "male", "female")
+
+# WHO 2000 standard population weights for 18 age groups (0-4 to 85+)
+who_weights <- c(8860, 8690, 8590, 8470, 8220, 7930, 7610, 7150, 6590, 6040, 5380, 4550, 3720, 2960, 2210, 1520, 900, 600) / 100000
+
+# Function to compute ASIR
+compute_asir <- function(cancer_data, pop_data, who_weights, site, sex_group) {
+  if (site == "All cancers") {
+    cancer_df <- cancer_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    cancer_df <- cancer_data %>% filter(siteiarc == site)
+  }
+  if (sex_group != "Both") {
+    cancer_df <- cancer_df %>% filter(sex == tolower(sex_group))
+  }
+  if (nrow(cancer_df) == 0) {
+    return(data.frame(year = integer(), asir = numeric()))
+  }
+  cancer_df <- cancer_df %>%
+    mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), labels = 1:18, right = FALSE))) %>%
+    filter(!is.na(age_group)) %>%
+    group_by(year = dxyr, age_group) %>%
+    summarise(counts = n(), .groups = 'drop')
+  
+  years <- unique(cancer_data$dxyr)
+  age_groups <- 1:18
+  full_df <- expand_grid(year = years, age_group = age_groups) %>%
+    left_join(cancer_df, by = c("year", "age_group")) %>%
+    mutate(counts = coalesce(counts, 0))
+  
+  if (sex_group == "Both") {
+    pop_df <- pop_data %>%
+      group_by(year, age5) %>%
+      summarise(pop = sum(pop_wpp), .groups = 'drop') %>%
+      rename(age_group = age5)
+  } else {
+    pop_df <- pop_data %>%
+      filter(sex == tolower(sex_group)) %>%
+      select(year, age_group = age5, pop = pop_wpp)
+  }
+  
+  full_df <- full_df %>%
+    left_join(pop_df, by = c("year", "age_group")) %>%
+    mutate(pop = coalesce(pop, 0),
+           age_rate = ifelse(pop > 0, counts / pop * 100000, 0)) %>%
+    group_by(year) %>%
+    summarise(asir = sum(age_rate * who_weights[age_group]), .groups = 'drop')
+  
+  full_df
+}
+
+# Function to compute Cumulative Incidence (0-74 years)
+compute_cuminc <- function(cancer_data, pop_data, site, sex_group) {
+  if (site == "All cancers") {
+    cancer_df <- cancer_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    cancer_df <- cancer_data %>% filter(siteiarc == site)
+  }
+  if (sex_group != "Both") {
+    cancer_df <- cancer_df %>% filter(sex == tolower(sex_group))
+  }
+  if (nrow(cancer_df) == 0) {
+    return(data.frame(year = integer(), cuminc = numeric()))
+  }
+  cancer_df <- cancer_df %>%
+    mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), labels = 1:18, right = FALSE))) %>%
+    filter(!is.na(age_group)) %>%
+    group_by(year = dxyr, age_group) %>%
+    summarise(counts = n(), .groups = 'drop')
+  
+  years <- unique(cancer_data$dxyr)
+  age_groups <- 1:18
+  full_df <- expand_grid(year = years, age_group = age_groups) %>%
+    left_join(cancer_df, by = c("year", "age_group")) %>%
+    mutate(counts = coalesce(counts, 0))
+  
+  if (sex_group == "Both") {
+    pop_df <- pop_data %>%
+      group_by(year, age5) %>%
+      summarise(pop = sum(pop_wpp), .groups = 'drop') %>%
+      rename(age_group = age5)
+  } else {
+    pop_df <- pop_data %>%
+      filter(sex == tolower(sex_group)) %>%
+      select(year, age_group = age5, pop = pop_wpp)
+  }
+  
+  full_df <- full_df %>%
+    left_join(pop_df, by = c("year", "age_group")) %>%
+    mutate(pop = coalesce(pop, 0),
+           age_rate = ifelse(pop > 0, counts / pop * 100000, 0)) %>%
+    group_by(year) %>%
+    summarise(cuminc = sum(age_rate[age_group %in% 1:15] * 5) / 100000 * 100, .groups = 'drop')
+  
+  full_df
+}
 
 # Preprocess data if needed (e.g., convert dates, etc.)
 # Assuming dxyr is integer year, siteiarc is character
@@ -159,58 +263,122 @@ ui <- dashboardPage(
             # Incidence page
             tabItem(tabName = "incidence",
                     fluidRow(
-                      column(4,
-                             selectInput("year_select", "Select Year:",
-                                         choices = c("All", sort(unique(data$dxyr))),
-                                         selected = "All")
-                      ),
-                      column(4,
-                             selectInput("site_select", "Select Cancer Site:",
-                                         choices = c("All", sort(unique(data$siteiarc))),
-                                         selected = "All")
+                      column(12,
+                             radioButtons("metric", "Select Metric:",
+                                          choices = c("Frequency", "ASIR", "Cumulative Incidence"),
+                                          inline = TRUE)
                       )
                     ),
-                    fluidRow(
-                      valueBoxOutput("num_cases", width = 4),
-                      valueBoxOutput("num_female_cases", width = 4),
-                      valueBoxOutput("num_male_cases", width = 4)
-                    ),
-                    fluidRow(
-                      box(
-                        title = "Cases by Year",
-                        plotOutput("bar_graph"),
-                        width = 6
-                      ),
-                      box(
-                        title = "Cases by Sex",
-                        plotOutput("sex_bar_graph"),
-                        width = 6
-                      )
-                    ),
-                    fluidRow(
-                      box(
-                        title = "Top 10 Incidental Cancers",
-                        DT::dataTableOutput("top10_table"),
-                        width = 6
-                      ),
-                      box(
-                        title = "Top 5 Incidental Cancers by Sex",
-                        div(class = "female-table",
-                            h4("FEMALES"),
-                            DT::dataTableOutput("top5_female_table")
+                    conditionalPanel(
+                      condition = "input.metric == 'Frequency'",
+                      fluidRow(
+                        column(4,
+                               selectInput("year_select", "Select Year:",
+                                           choices = c("All", sort(unique(data$dxyr))),
+                                           selected = "All")
                         ),
-                        div(class = "male-table",
-                            h4("MALES"),
-                            DT::dataTableOutput("top5_male_table")
+                        column(4,
+                               selectInput("site_select", "Select Cancer Site:",
+                                           choices = c("All", sort(unique(data$siteiarc))),
+                                           selected = "All")
+                        )
+                      ),
+                      fluidRow(
+                        valueBoxOutput("num_cases", width = 4),
+                        valueBoxOutput("num_female_cases", width = 4),
+                        valueBoxOutput("num_male_cases", width = 4)
+                      ),
+                      fluidRow(
+                        box(
+                          title = "Cases by Year",
+                          plotOutput("bar_graph"),
+                          width = 6
                         ),
-                        width = 6
+                        box(
+                          title = "Cases by Sex",
+                          plotOutput("sex_bar_graph"),
+                          width = 6
+                        )
+                      ),
+                      fluidRow(
+                        box(
+                          title = "Top 10 Incidental Cancers",
+                          DT::dataTableOutput("top10_table"),
+                          width = 6
+                        ),
+                        box(
+                          title = "Top 5 Incidental Cancers by Sex",
+                          div(class = "female-table",
+                              h4("FEMALES"),
+                              DT::dataTableOutput("top5_female_table")
+                          ),
+                          div(class = "male-table",
+                              h4("MALES"),
+                              DT::dataTableOutput("top5_male_table")
+                          ),
+                          width = 6
+                        )
+                      ),
+                      fluidRow(
+                        box(
+                          title = "Cases by 5-Year Age Bands",
+                          plotOutput("cases_by_age_bands"),
+                          width = 12
+                        )
                       )
                     ),
-                    fluidRow(
-                      box(
-                        title = "Cases by 5-Year Age Bands",
-                        plotOutput("cases_by_age_bands"),
-                        width = 12
+                    conditionalPanel(
+                      condition = "input.metric == 'ASIR'",
+                      fluidRow(
+                        column(6,
+                               selectInput("asir_site_select", "Select Cancer Site:",
+                                           choices = NULL)
+                        ),
+                        column(6,
+                               checkboxGroupInput("asir_sex_select", "Select Sex:",
+                                                  choices = c("Both", "Female", "Male"),
+                                                  selected = c("Both", "Female", "Male"),
+                                                  inline = TRUE)
+                        )
+                      ),
+                      fluidRow(
+                        valueBoxOutput("avg_asir_both", width = 4),
+                        valueBoxOutput("avg_asir_female", width = 4),
+                        valueBoxOutput("avg_asir_male", width = 4)
+                      ),
+                      fluidRow(
+                        box(
+                          title = "ASIR Trend by Year",
+                          plotOutput("asir_line_graph"),
+                          width = 12
+                        )
+                      )
+                    ),
+                    conditionalPanel(
+                      condition = "input.metric == 'Cumulative Incidence'",
+                      fluidRow(
+                        column(6,
+                               selectInput("cum_site_select", "Select Cancer Site:",
+                                           choices = NULL)
+                        ),
+                        column(6,
+                               checkboxGroupInput("cum_sex_select", "Select Sex:",
+                                                  choices = c("Both", "Female", "Male"),
+                                                  selected = c("Both", "Female", "Male"),
+                                                  inline = TRUE)
+                        )
+                      ),
+                      fluidRow(
+                        valueBoxOutput("avg_cum_both", width = 4),
+                        valueBoxOutput("avg_cum_female", width = 4),
+                        valueBoxOutput("avg_cum_male", width = 4)
+                      ),
+                      fluidRow(
+                        box(
+                          title = "Cumulative Incidence Trend by Year",
+                          plotOutput("cum_line_graph"),
+                          width = 12
+                        )
                       )
                     )
             ),
@@ -616,7 +784,21 @@ server <- function(input, output, session) {
       labs(title = "Cancer Cases by Parish", x = "Parish", y = "Number of Cases")
   })
   
-  # Incidence page
+  # Top 25 sites
+  top25_sites <- data %>%
+    filter(siteiarc != "Other and unspecified (O&U)") %>%
+    count(siteiarc) %>%
+    arrange(desc(n)) %>%
+    head(25) %>%
+    pull(siteiarc)
+  
+  # Update select inputs for ASIR and Cumulative
+  observe({
+    updateSelectInput(session, "asir_site_select", choices = c("All cancers", top25_sites), selected = "All cancers")
+    updateSelectInput(session, "cum_site_select", choices = c("All cancers", top25_sites), selected = "All cancers")
+  })
+  
+  # Incidence page - Frequency
   filtered_data <- reactive({
     req(credentials()$user_auth)
     df <- data
@@ -630,28 +812,28 @@ server <- function(input, output, session) {
   })
   
   output$num_cases <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     valueBox(
       nrow(filtered_data()),
-      "Number of Cases",
-      icon = icon("chart-bar"),
-      color = "purple"
+      "Number of Cases (2013-2022)",
+      icon = icon("users"),
+      color = "green"
     )
   })
   
   output$num_female_cases <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     female_cases <- nrow(filtered_data() %>% filter(sex == "female"))
     valueBox(
       female_cases,
       "Female Cases",
       icon = icon("venus"),
-      color = "red"
+      color = "maroon"
     )
   })
   
   output$num_male_cases <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     male_cases <- nrow(filtered_data() %>% filter(sex == "male"))
     valueBox(
       male_cases,
@@ -662,7 +844,7 @@ server <- function(input, output, session) {
   })
   
   output$bar_graph <- renderPlot({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     df <- data
     if (input$site_select != "All") {
       df <- df %>% filter(siteiarc == input$site_select)
@@ -671,15 +853,15 @@ server <- function(input, output, session) {
       group_by(dxyr) %>%
       summarise(cases = n()) %>%
       ggplot(aes(x = dxyr, y = cases)) +
-      geom_bar(stat = "identity", fill = "blue") +
-      geom_text(aes(label = round(cases, 1), y = cases * 1.01), vjust = -0.5, size = 5) +
+      geom_bar(stat = "identity", fill = "#005a32") +
+      geom_text(aes(label = cases, y = cases * 1.01), vjust = -0.5, size = 5) +
       scale_x_continuous(breaks = seq(min(data$dxyr), max(data$dxyr), by = 1)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
             axis.title.x = element_text(size = 14),
             axis.title.y = element_text(size = 14)) +
-      labs(title = "Cases by Year", x = "Year", y = "Number of Cases")
+      labs(x = "Year", y = "Number of Cases")
   })
   
   output$sex_bar_graph <- renderPlot({
@@ -704,9 +886,8 @@ server <- function(input, output, session) {
   })
   
   output$cases_by_age_bands <- renderPlot({
-    req(credentials()$user_auth)
-    df <- filtered_data()
-    df %>%
+    req(credentials()$user_auth, input$metric == "Frequency")
+    filtered_data() %>%
       mutate(age_band = cut(age, 
                             breaks = c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, Inf),
                             labels = c("0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", 
@@ -728,7 +909,7 @@ server <- function(input, output, session) {
   })
   
   output$top10_table <- DT::renderDataTable({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -742,7 +923,7 @@ server <- function(input, output, session) {
   }, options = list(pageLength = 10, searching = FALSE))
   
   output$top5_female_table <- DT::renderDataTable({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -756,7 +937,7 @@ server <- function(input, output, session) {
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
   output$top5_male_table <- DT::renderDataTable({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$metric == "Frequency")
     year_df <- data
     if (input$year_select != "All") {
       year_df <- year_df %>% filter(dxyr == as.integer(input$year_select))
@@ -768,6 +949,186 @@ server <- function(input, output, session) {
       head(5) %>%
       rename(`Cancer Site` = siteiarc, Frequency = n)
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
+  
+  # Incidence page - ASIR
+  asir_data <- reactive({
+    req(credentials()$user_auth, input$metric == "ASIR")
+    site <- input$asir_site_select
+    asir_both <- NULL
+    asir_female <- NULL
+    asir_male <- NULL
+    if ("Both" %in% input$asir_sex_select) {
+      asir_both <- compute_asir(data, pop_data, who_weights, site, "Both")
+    }
+    if ("Female" %in% input$asir_sex_select) {
+      asir_female <- compute_asir(data, pop_data, who_weights, site, "Female")
+    }
+    if ("Male" %in% input$asir_sex_select) {
+      asir_male <- compute_asir(data, pop_data, who_weights, site, "Male")
+    }
+    list(both = asir_both, female = asir_female, male = asir_male)
+  })
+  
+  output$avg_asir_both <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "ASIR")
+    df <- asir_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASIR (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$asir, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASIR (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_asir_female <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "ASIR")
+    df <- asir_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASIR (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$asir, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASIR (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_asir_male <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "ASIR")
+    df <- asir_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASIR (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$asir, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASIR (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$asir_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$metric == "ASIR")
+    dflist <- asir_data()
+    
+    # Initialize an empty ggplot object
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "ASIR per 100,000", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    # Add layers only if data exists and has rows
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = asir, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = asir, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = asir, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = asir, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = asir, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = asir, color = "Male"))
+    }
+    
+    # If no data is plotted, add a message
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
+  
+  # Incidence page - Cumulative Incidence
+  cum_data <- reactive({
+    req(credentials()$user_auth, input$metric == "Cumulative Incidence")
+    site <- input$cum_site_select
+    cum_both <- NULL
+    cum_female <- NULL
+    cum_male <- NULL
+    if ("Both" %in% input$cum_sex_select) {
+      cum_both <- compute_cuminc(data, pop_data, site, "Both")
+    }
+    if ("Female" %in% input$cum_sex_select) {
+      cum_female <- compute_cuminc(data, pop_data, site, "Female")
+    }
+    if ("Male" %in% input$cum_sex_select) {
+      cum_male <- compute_cuminc(data, pop_data, site, "Male")
+    }
+    list(both = cum_both, female = cum_female, male = cum_male)
+  })
+  
+  output$avg_cum_both <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Cumulative Incidence")
+    df <- cum_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Risk % (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$cuminc, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Risk % (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_cum_female <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Cumulative Incidence")
+    df <- cum_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Risk % (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$cuminc, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Risk % (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_cum_male <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Cumulative Incidence")
+    df <- cum_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Risk % (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$cuminc, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Risk % (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$cum_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$metric == "Cumulative Incidence")
+    dflist <- cum_data()
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "Cumulative Incidence % (0-74 years)", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = cuminc, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = cuminc, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = cuminc, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = cuminc, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = cuminc, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = cuminc, color = "Male"))
+    }
+    
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
   
   # Mortality page
   filtered_mort_data <- reactive({
