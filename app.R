@@ -4,27 +4,32 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      27-AUG-2025
-##  algorithm task          Create HTN Dashboard for Barbados Cancer Registry
+##  date last modified      06-SEP-2025
+##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
 ##  methods                 See additional information on dashboard. 
 
-# Required libraries
-library(shiny)
-library(shinydashboard)
-library(shinyauthr)
-library(shinyjs)
-library(sodium)
-library(dplyr)
-library(ggplot2)
-library(DT)
-library(lubridate)
-library(survival)
-library(plotly)
-library(tidyr)
-library(purrr)
-library(readxl)
+#-------------------------------------------------------------------------------
+######################
+### Libraries ###
+#####################
+# Note: Add any new libraries to the list of libaries in libs
+
+#List of libaries needed
+libs <- c("shiny", "shinydashboard", "shinyauthr", "shinyjs", "sodium", "dplyr",
+          "ggplot2", "DT", "lubridate", "survival", "plotly", "tidyr", "purrr",
+          "readxl")
+
+#Install missing libraries
+installed_libs <- libs %in% rownames(installed.packages())
+if (any(installed_libs == F)) {
+  install.packages(libs[!installed_libs])
+}
+
+#Load libraries
+invisible(lapply(libs, library, character.only = T))
+#-------------------------------------------------------------------------------
 
 # User credentials
 user_base <- tibble::tibble(
