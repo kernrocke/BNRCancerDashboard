@@ -4,7 +4,7 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      06-SEP-2025
+##  date last modified      08-SEP-2025
 ##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
@@ -157,15 +157,21 @@ ui <- dashboardPage(
     titleWidth = "100%"
   ),
   dashboardSidebar(
-    sidebarMenu(
-      menuItem("Home", tabName = "home", icon = icon("home")),
-      menuItem("Incidence", tabName = "incidence", icon = icon("chart-bar")),
-      menuItem("Mortality", tabName = "mortality", icon = icon("skull-crossbones")),
-      menuItem("Survival", tabName = "survival", icon = icon("heartbeat")),
-      menuItem("Projection", tabName = "projection", icon = icon("chart-line")),
-      menuItem("Reports", tabName = "reports", icon = icon("file-alt")),
-      menuItem("Additional Information", tabName = "additional", icon = icon("info-circle")),
-      menuItem("Contact Us", tabName = "contact", icon = icon("envelope"))
+    id = "sidebar",
+    # Move the shinyjs::hidden functionality here
+    div(
+      id = "sidebar_content",
+      sidebarMenu(
+        menuItem("Home", tabName = "home", icon = icon("home")),
+        menuItem("Incidence", tabName = "incidence", icon = icon("chart-bar")),
+        menuItem("Mortality", tabName = "mortality", icon = icon("skull-crossbones")),
+        menuItem("Survival", tabName = "survival", icon = icon("heartbeat")),
+        menuItem("Projection", tabName = "projection", icon = icon("chart-line")),
+        menuItem("Data Quality", tabName = "data_quality", icon = icon("check-circle")),
+        menuItem("Reports", tabName = "reports", icon = icon("file-alt")),
+        menuItem("Additional Information", tabName = "additional", icon = icon("info-circle")),
+        menuItem("Contact Us", tabName = "contact", icon = icon("envelope"))
+      )
     )
   ),
   dashboardBody(
@@ -173,16 +179,22 @@ ui <- dashboardPage(
     tags$head(
       tags$link(rel = "icon", type = "image/png", href = "bnr_logo.png"),
       tags$style(HTML("
-        .female-table .dataTable th { background-color: #FFC1CC !important; }
-        .male-table .dataTable th { background-color: #ADD8E6 !important; }
-        .both-table .dataTable th { background-color: #90EE90 !important; }
-        .male-surv-table .dataTable th { background-color: #ADD8E6 !important; }
-        .female-surv-table .dataTable th { background-color: #FFC1CC !important; }
-        .main-header .logo { width: 100% !important; text-align: center; padding-left: 10px; background-color: #253494 !important; color: #FFFFFF !important; }
-        .collaborator-logo { display: block; margin: 10px auto; height: 100px; width: auto; object-fit: contain; }
-        .collaborator-text { text-align: left; font-size: 16px; font-weight: bold; }
-        .login-container { max-width: 900px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
-      "))
+  .female-table .dataTable th { background-color: #FFC1CC !important; }
+  .male-table .dataTable th { background-color: #ADD8E6 !important; }
+  .both-table .dataTable th { background-color: #90EE90 !important; }
+  .male-surv-table .dataTable th { background-color: #ADD8E6 !important; }
+  .female-surv-table .dataTable th { background-color: #FFC1CC !important; }
+  .main-header .logo { width: 100% !important; text-align: center; padding-left: 10px; background-color: #253494 !important; color: #FFFFFF !important; }
+  .collaborator-logo { display: block; margin: 10px auto; height: 100px; width: auto; object-fit: contain; }
+  .collaborator-text { text-align: left; font-size: 16px; font-weight: bold; }
+  .login-container { max-width: 900px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+  
+  /* Hide sidebar initially - use specific selector to avoid conflicts */
+  body.not-authenticated .main-sidebar { display: none !important; }
+  body.not-authenticated .content-wrapper { margin-left: 0 !important; }
+  body.not-authenticated .main-header { margin-left: 0 !important; }
+"))
+      
     ),
     div(id = "loginpage",
         class = "login-container",
@@ -502,6 +514,103 @@ ui <- dashboardPage(
                       )
                     )
             ),
+            # Data Quality page
+            tabItem(tabName = "data_quality",
+                    h2("Data Quality Indicators (All Years)"),
+                    tabsetPanel(
+                      tabPanel("MV%",
+                               fluidRow(
+                                 box(
+                                   title = "MV% by Year (Bar Graph)",
+                                   plotOutput("mv_bar"),
+                                   width = 6
+                                 ),
+                                 box(
+                                   title = "Statistical Process Control (SPC) Chart for MV%",
+                                   plotOutput("mv_spc"),
+                                   width = 6
+                                 )
+                               ),
+                               fluidRow(
+                                 box(
+                                   title = "Interpretation of SPC Chart",
+                                   htmlOutput("spc_interpretation_mv"),
+                                   width = 12
+                                 )
+                               )
+                      ),
+                      tabPanel("DCO%",
+                               fluidRow(
+                                 box(
+                                   title = "DCO% by Year (Bar Graph)",
+                                   plotOutput("dco_bar"),
+                                   width = 6
+                                 ),
+                                 box(
+                                   title = "Statistical Process Control (SPC) Chart for DCO%",
+                                   plotOutput("dco_spc"),
+                                   width = 6
+                                 )
+                               ),
+                               fluidRow(
+                                 box(
+                                   title = "Interpretation of SPC Chart",
+                                   htmlOutput("spc_interpretation_dco"),
+                                   width = 12
+                                 )
+                               )
+                      ),
+                      tabPanel("Ill-Defined Sites%",
+                               fluidRow(
+                                 box(
+                                   title = "Ill-Defined Sites% by Year (Bar Graph)",
+                                   plotOutput("ill_def_bar"),
+                                   width = 6
+                                 ),
+                                 box(
+                                   title = "Statistical Process Control (SPC) Chart for Ill-Defined Sites%",
+                                   plotOutput("ill_def_spc"),
+                                   width = 6
+                                 )
+                               ),
+                               fluidRow(
+                                 box(
+                                   title = "Interpretation of SPC Chart",
+                                   htmlOutput("spc_interpretation_ill_def"),
+                                   width = 12
+                                 )
+                               )
+                      ),
+                      tabPanel("Topo-Morph Consistency%",
+                               fluidRow(
+                                 box(
+                                   title = "Topo-Morph Consistency % by Year (Bar Graph)",
+                                   plotOutput("topo_morph_bar"),
+                                   width = 6
+                                 ),
+                                 box(
+                                   title = "Statistical Process Control (SPC) Chart for Topo-Morph Consistency%",
+                                   plotOutput("topo_morph_spc"),
+                                   width = 6
+                                 )
+                               ),
+                               fluidRow(
+                                 box(
+                                   title = "Interpretation of SPC Chart",
+                                   htmlOutput("spc_interpretation_topo_morph"),
+                                   width = 12
+                                 )
+                               )
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Definitions of Indicators",
+                        htmlOutput("indicator_definitions"),
+                        width = 12
+                      )
+                    )
+            ),
             # Placeholder for other pages
             tabItem(tabName = "projection",
                     h2("Projection Page"),
@@ -598,23 +707,39 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
-  # Handle authentication
+  # Authentication
   credentials <- shinyauthr::loginServer(
     id = "login_form",
     data = user_base,
     user_col = user,
     pwd_col = password,
     sodium_hashed = TRUE,
-    log_out = reactive(NULL)
+    log_out = reactive(logout_init())
   )
+  
+  logout_init <- shinyauthr::logoutServer(
+    id = "logout",
+    active = reactive(credentials()$user_auth)
+  )
+  # ADD THE INITIALIZATION HERE:
+  observe({
+    # Initialize with not-authenticated class
+    shinyjs::addClass(selector = "body", class = "not-authenticated")
+  })
   
   observe({
     if (credentials()$user_auth) {
-      shinyjs::hide("loginpage")
-      shinyjs::show("dashboard_content")
+      # User is authenticated
+      shinyjs::hide(id = "loginpage")
+      shinyjs::show(id = "dashboard_content")
+      shinyjs::removeClass(selector = "body", class = "not-authenticated")
+      shinyjs::removeClass(selector = "body", class = "sidebar-collapse")
     } else {
-      shinyjs::show("loginpage")
-      shinyjs::hide("dashboard_content")
+      # User is not authenticated
+      shinyjs::show(id = "loginpage")
+      shinyjs::hide(id = "dashboard_content")
+      shinyjs::addClass(selector = "body", class = "not-authenticated")
+      shinyjs::addClass(selector = "body", class = "sidebar-collapse")
     }
   })
   
@@ -1302,6 +1427,224 @@ server <- function(input, output, session) {
             axis.title.x = element_text(size = 14),
             axis.title.y = element_text(size = 14)) +
       labs(x = "Age Band", y = "Number of Deaths")
+  })
+  
+  # Data quality calculations (for all years)
+  data_quality_by_year <- reactive({
+    req(credentials()$user_auth)
+    df <- data %>%
+      group_by(dxyr) %>%
+      summarise(
+        n = n(),
+        mv_count = sum(grepl("Hx|Cytology|Lab|Haem", basis, ignore.case = TRUE), na.rm = TRUE),
+        dco_count = sum(basis == "DCO", na.rm = TRUE),
+        ill_def_count = sum(grepl("C76|C80|UNKNOWN", primarysite, ignore.case = TRUE) |
+                              grepl("C76|C80", top, ignore.case = TRUE), na.rm = TRUE),
+        topo_morph_count = sum(mapply(function(top, icd10, morph) {
+          !is.na(top) && !is.na(icd10) && !is.na(morph) && morph != "" &&
+            grepl(top, icd10, ignore.case = TRUE) &&
+            !grepl("Neoplasm, malignant|NOS", morph, ignore.case = TRUE)
+        }, top, icd10, morph), na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        mv_prop = mv_count / n * 100,
+        dco_prop = dco_count / n * 100,
+        ill_def_prop = ill_def_count / n * 100,
+        topo_morph_prop = topo_morph_count / n * 100
+      ) %>%
+      arrange(dxyr)
+  })
+  
+  # MV% Bar Graph
+  output$mv_bar <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    ggplot(by_year, aes(x = factor(dxyr), y = mv_prop)) +
+      geom_bar(stat = "identity", fill = "#b2df8a") +
+      geom_text(aes(label = sprintf("%.1f", mv_prop)), vjust = -0.5, size = 4) +
+      labs(title = "Microscopic Verification (MV%) by Year", x = "Year", y = "MV%") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 14)
+      )
+  })
+  
+  # MV% SPC Chart
+  output$mv_spc <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    qcc(by_year$mv_prop / 100, sizes = by_year$n, type = "p",
+        xlab = "Year", ylab = "MV Proportion", title = "SPC p-Chart for MV% Over Years",
+        labels = by_year$dxyr)
+  })
+  
+  # DCO% Bar Graph
+  output$dco_bar <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    ggplot(by_year, aes(x = factor(dxyr), y = dco_prop)) +
+      geom_bar(stat = "identity", fill = "#fb9a99") +
+      geom_text(aes(label = sprintf("%.1f", dco_prop)), vjust = -0.5, size = 4) +
+      labs(title = "Death Certificate Only (DCO%) by Year", x = "Year", y = "DCO%") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 14)
+      )
+  })
+  
+  # DCO% SPC Chart
+  output$dco_spc <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    qcc(by_year$dco_prop / 100, sizes = by_year$n, type = "p",
+        xlab = "Year", ylab = "DCO Proportion", title = "SPC p-Chart for DCO% Over Years",
+        labels = by_year$dxyr)
+  })
+  
+  # Ill-Defined Sites% Bar Graph
+  output$ill_def_bar <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    ggplot(by_year, aes(x = factor(dxyr), y = ill_def_prop)) +
+      geom_bar(stat = "identity", fill = "#fdbf6f") +
+      geom_text(aes(label = sprintf("%.1f", ill_def_prop)), vjust = -0.5, size = 4) +
+      labs(title = "Ill-Defined Sites% by Year", x = "Year", y = "Ill-Defined Sites%") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 14)
+      )
+  })
+  
+  # Ill-Defined Sites% SPC Chart
+  output$ill_def_spc <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    qcc(by_year$ill_def_prop / 100, sizes = by_year$n, type = "p",
+        xlab = "Year", ylab = "Ill-Defined Sites Proportion", title = "SPC p-Chart for Ill-Defined Sites% Over Years",
+        labels = by_year$dxyr)
+  })
+  
+  # Topo-Morph Consistency% Bar Graph
+  output$topo_morph_bar <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    ggplot(by_year, aes(x = factor(dxyr), y = topo_morph_prop)) +
+      geom_bar(stat = "identity", fill = "#cab2d6") +
+      geom_text(aes(label = sprintf("%.1f", topo_morph_prop)), vjust = -0.5, size = 4) +
+      labs(title = "Topography-Morphology Consistency% by Year", x = "Year", y = "Topo-Morph Consistency%") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 14)
+      )
+  })
+  
+  # Topo-Morph Consistency% SPC Chart
+  output$topo_morph_spc <- renderPlot({
+    req(credentials()$user_auth)
+    by_year <- data_quality_by_year()
+    qcc(by_year$topo_morph_prop / 100, sizes = by_year$n, type = "p",
+        xlab = "Year", ylab = "Topo-Morph Consistency Proportion", title = "SPC p-Chart for Topo-Morph Consistency% Over Years",
+        labels = by_year$dxyr)
+  })
+  
+  # SPC Interpretations
+  output$spc_interpretation_mv <- renderUI({
+    req(credentials()$user_auth)
+    HTML("
+      <p>The Statistical Process Control (SPC) p-chart monitors the proportion of cases with microscopic verification (MV%) over time to assess the stability and quality of cancer registry data. Key elements include:</p>
+      <ul>
+        <li><strong>Centerline (CL):</strong> Represents the average MV% across all years, indicating the expected proportion under stable conditions.</li>
+        <li><strong>Control Limits (UCL/LCL):</strong> The Upper Control Limit (UCL) and Lower Control Limit (LCL) define the range of expected variation based on statistical norms (typically ±3 standard deviations). Points within these limits suggest normal variation.</li>
+        <li><strong>Data Points:</strong> Each point represents the MV% for a given year, calculated as the number of microscopically verified cases divided by total cases.</li>
+      </ul>
+      <p>How to interpret the chart:</p>
+      <ul>
+        <li><strong>Points within control limits:</strong> Indicate that MV% is stable and within expected variation, suggesting consistent data quality processes.</li>
+        <li><strong>Points outside control limits:</strong> Suggest unusual variation, potentially due to changes in diagnostic practices, data collection issues, or errors. For example, a point above the UCL may indicate improved verification processes, while a point below the LCL may signal under-reporting of verified cases.</li>
+        <li><strong>Patterns or trends:</strong> Consistent trends (e.g., several consecutive points increasing or decreasing) or shifts (e.g., multiple points above/below the centerline) may indicate systematic changes in registry processes, such as new diagnostic technologies or coding errors.</li>
+      </ul>
+      <p>Practical implications: A stable MV% (e.g., 80–90% as per IARC standards) with most points within control limits suggests reliable data quality. Out-of-control points or trends warrant investigation into data collection, coding practices, or external factors (e.g., changes in pathology services).</p>
+    ")
+  })
+  
+  output$spc_interpretation_dco <- renderUI({
+    req(credentials()$user_auth)
+    HTML("
+      <p>The Statistical Process Control (SPC) p-chart monitors the proportion of Death Certificate Only (DCO%) cases over time to assess the completeness of cancer registry data. Key elements include:</p>
+      <ul>
+        <li><strong>Centerline (CL):</strong> Represents the average DCO% across all years, indicating the expected proportion under stable conditions.</li>
+        <li><strong>Control Limits (UCL/LCL):</strong> The Upper Control Limit (UCL) and Lower Control Limit (LCL) define the range of expected variation based on statistical norms (typically ±3 standard deviations). Points within these limits suggest normal variation.</li>
+        <li><strong>Data Points:</strong> Each point represents the DCO% for a given year, calculated as the number of DCO cases divided by total cases.</li>
+      </ul>
+      <p>How to interpret the chart:</p>
+      <ul>
+        <li><strong>Points within control limits:</strong> Indicate that DCO% is stable, suggesting consistent case ascertainment processes.</li>
+        <li><strong>Points outside control limits:</strong> Suggest unusual variation, potentially due to incomplete case reporting or changes in death certificate integration. A point above the UCL may indicate reliance on death certificates, while a point below the LCL may reflect improved case capture.</li>
+        <li><strong>Patterns or trends:</strong> Consistent trends or shifts may indicate systematic changes, such as improved hospital reporting or issues with data linkage.</li>
+      </ul>
+      <p>Practical implications: A low and stable DCO% (e.g., <5% as per IARC standards) suggests high-quality data ascertainment. High or increasing DCO% warrants investigation into case-finding procedures.</p>
+    ")
+  })
+  
+  output$spc_interpretation_ill_def <- renderUI({
+    req(credentials()$user_auth)
+    HTML("
+      <p>The Statistical Process Control (SPC) p-chart monitors the proportion of cases with ill-defined primary sites (Ill-Defined Sites%) over time to assess the specificity of cancer registry data. Key elements include:</p>
+      <ul>
+        <li><strong>Centerline (CL):</strong> Represents the average Ill-Defined Sites% across all years, indicating the expected proportion under stable conditions.</li>
+        <li><strong>Control Limits (UCL/LCL):</strong> The Upper Control Limit (UCL) and Lower Control Limit (LCL) define the range of expected variation based on statistical norms (typically ±3 standard deviations). Points within these limits suggest normal variation.</li>
+        <li><strong>Data Points:</strong> Each point represents the Ill-Defined Sites% for a given year, calculated as the number of cases with ill-defined sites divided by total cases.</li>
+      </ul>
+      <p>How to interpret the chart:</p>
+      <ul>
+        <li><strong>Points within control limits:</strong> Indicate that Ill-Defined Sites% is stable, suggesting consistent coding practices.</li>
+        <li><strong>Points outside control limits:</strong> Suggest unusual variation, potentially due to poor diagnostic precision or coding errors. A point above the UCL may indicate increased use of vague codes, while a point below the LCL may reflect improved site specification.</li>
+        <li><strong>Patterns or trends:</strong> Consistent trends or shifts may indicate systematic issues, such as changes in diagnostic technology or coder training.</li>
+      </ul>
+      <p>Practical implications: A low and stable Ill-Defined Sites% (e.g., <5% as per IARC standards) suggests high-quality data. High or increasing percentages warrant review of diagnostic and coding processes.</p>
+    ")
+  })
+  
+  output$spc_interpretation_topo_morph <- renderUI({
+    req(credentials()$user_auth)
+    HTML("
+      <p>The Statistical Process Control (SPC) p-chart monitors the proportion of cases with consistent topography and morphology (Topo-Morph Consistency%) over time to assess the accuracy of cancer registry data. Key elements include:</p>
+      <ul>
+        <li><strong>Centerline (CL):</strong> Represents the average Topo-Morph Consistency% across all years, indicating the expected proportion under stable conditions.</li>
+        <li><strong>Control Limits (UCL/LCL):</strong> The Upper Control Limit (UCL) and Lower Control Limit (LCL) define the range of expected variation based on statistical norms (typically ±3 standard deviations). Points within these limits suggest normal variation.</li>
+        <li><strong>Data Points:</strong> Each point represents the Topo-Morph Consistency% for a given year, calculated as the number of cases with consistent topography and morphology divided by total cases.</li>
+      </ul>
+      <p>How to interpret the chart:</p>
+      <ul>
+        <li><strong>Points within control limits:</strong> Indicate that Topo-Morph Consistency% is stable, suggesting reliable coding practices.</li>
+        <li><strong>Points outside control limits:</strong> Suggest unusual variation, potentially due to errors in topography or morphology coding. A point above the UCL may indicate improved coding accuracy, while a point below the LCL may reflect inconsistencies.</li>
+        <li><strong>Patterns or trends:</strong> Consistent trends or shifts may indicate systematic changes, such as updates to coding standards or training issues.</li>
+      </ul>
+      <p>Practical implications: A high and stable Topo-Morph Consistency% (e.g., >90%) suggests accurate data coding. Low or decreasing percentages warrant investigation into coding practices or data validation processes.</p>
+    ")
+  })
+  
+  # Indicator Definitions
+  output$indicator_definitions <- renderUI({
+    req(credentials()$user_auth)
+    HTML("
+      <h4>Definitions of Data Quality Indicators:</h4>
+      <ul>
+        <li><strong>MV% (Microscopic Verification):</strong> Percentage of cases with microscopic verification, where the diagnosis is confirmed by histology, cytology, laboratory tests, or hematology (basis containing 'Hx', 'Cytology', 'Lab', or 'Haem'). A high MV% (e.g., 80–90% per IARC standards) indicates reliable diagnostic confirmation.</li>
+        <li><strong>DCO% (Death Certificate Only):</strong> Percentage of cases identified solely through death certificates, indicating incomplete clinical data. A low DCO% (e.g., <5%) suggests effective case ascertainment.</li>
+        <li><strong>Ill-Defined Sites%:</strong> Percentage of cases with ill-defined primary sites (e.g., ICD-O codes C76, C80, or 'UNKNOWN'). A low percentage (e.g., <5%) indicates precise site coding.</li>
+        <li><strong>Topo-Morph Consistency%:</strong> Percentage of cases where the topography code (top) matches the ICD-10 code (icd10) and the morphology code (morph) is specific (excludes vague terms like 'Neoplasm, malignant' or 'NOS'). A high percentage (e.g., >90%) indicates accurate and consistent coding.</li>
+      </ul>
+    ")
   })
   
   # Reports page
