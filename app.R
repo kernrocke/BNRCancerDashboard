@@ -19,7 +19,7 @@
 #List of libaries needed
 libs <- c("shiny", "shinydashboard", "shinyauthr", "shinyjs", "sodium", "dplyr",
           "ggplot2", "DT", "lubridate", "survival", "plotly", "tidyr", "purrr",
-          "readxl")
+          "readxl", "qcc")
 
 #Install missing libraries
 installed_libs <- libs %in% rownames(installed.packages())
