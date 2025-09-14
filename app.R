@@ -4,7 +4,7 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      08-SEP-2025
+##  date last modified      13-SEP-2025
 ##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
@@ -142,6 +142,49 @@ compute_cuminc <- function(cancer_data, pop_data, site, sex_group) {
     summarise(cuminc = sum(age_rate[age_group %in% 1:15] * 5) / 100000 * 100, .groups = 'drop')
   
   full_df
+}
+
+# Function to compute Crude Incidence Rate
+compute_crude_incidence <- function(cancer_data, pop_data, site, sex_group) {
+  if (site == "All cancers") {
+    cancer_df <- cancer_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    cancer_df <- cancer_data %>% filter(siteiarc == site)
+  }
+  if (sex_group != "Both") {
+    cancer_df <- cancer_df %>% filter(sex == tolower(sex_group))
+  }
+  if (nrow(cancer_df) == 0) {
+    return(data.frame(year = integer(), crude_rate = numeric()))
+  }
+  
+  # Count cases by year
+  cancer_counts <- cancer_df %>%
+    group_by(year = dxyr) %>%
+    summarise(counts = n(), .groups = 'drop')
+  
+  # Get population data
+  if (sex_group == "Both") {
+    pop_df <- pop_data %>%
+      group_by(year) %>%
+      summarise(pop = sum(pop_wpp), .groups = 'drop')
+  } else {
+    pop_df <- pop_data %>%
+      filter(sex == tolower(sex_group)) %>%
+      group_by(year) %>%
+      summarise(pop = sum(pop_wpp), .groups = 'drop')
+  }
+  
+  # Merge cancer counts with population data
+  crude_df <- cancer_counts %>%
+    left_join(pop_df, by = "year") %>%
+    mutate(
+      pop = coalesce(pop, 0),
+      crude_rate = ifelse(pop > 0, counts / pop * 100000, 0)
+    ) %>%
+    select(year, crude_rate)
+  
+  crude_df
 }
 
 # Preprocess data if needed (e.g., convert dates, etc.)
@@ -282,7 +325,7 @@ ui <- dashboardPage(
                     fluidRow(
                       column(12,
                              radioButtons("metric", "Select Metric:",
-                                          choices = c("Frequency", "ASIR", "Cumulative Incidence"),
+                                          choices = c("Frequency", "Crude Incidence", "ASIR", "Cumulative Incidence"),
                                           inline = TRUE)
                       )
                     ),
@@ -340,6 +383,33 @@ ui <- dashboardPage(
                         box(
                           title = "Cases by 5-Year Age Bands",
                           plotOutput("cases_by_age_bands"),
+                          width = 12
+                        )
+                      )
+                    ),
+                    conditionalPanel(
+                      condition = "input.metric == 'Crude Incidence'",
+                      fluidRow(
+                        column(6,
+                               selectInput("crude_site_select", "Select Cancer Site:",
+                                           choices = NULL)
+                        ),
+                        column(6,
+                               checkboxGroupInput("crude_sex_select", "Select Sex:",
+                                                  choices = c("Both", "Female", "Male"),
+                                                  selected = c("Both", "Female", "Male"),
+                                                  inline = TRUE)
+                        )
+                      ),
+                      fluidRow(
+                        valueBoxOutput("avg_crude_both", width = 4),
+                        valueBoxOutput("avg_crude_female", width = 4),
+                        valueBoxOutput("avg_crude_male", width = 4)
+                      ),
+                      fluidRow(
+                        box(
+                          title = "Crude Incidence Rate Trend by Year",
+                          plotOutput("crude_line_graph"),
                           width = 12
                         )
                       )
@@ -926,6 +996,7 @@ server <- function(input, output, session) {
   observe({
     updateSelectInput(session, "asir_site_select", choices = c("All cancers", top25_sites), selected = "All cancers")
     updateSelectInput(session, "cum_site_select", choices = c("All cancers", top25_sites), selected = "All cancers")
+    updateSelectInput(session, "crude_site_select", choices = c("All cancers", top25_sites), selected = "All cancers")
   })
   
   # Incidence page - Frequency
@@ -1162,6 +1233,98 @@ server <- function(input, output, session) {
     if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
       p <- p + geom_line(data = dflist$male, aes(x = year, y = asir, color = "Male"), size = 1) +
         geom_point(data = dflist$male, aes(x = year, y = asir, color = "Male"))
+    }
+    
+    # If no data is plotted, add a message
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
+  
+  # Incidence page - Crude Incidence
+  crude_data <- reactive({
+    req(credentials()$user_auth, input$metric == "Crude Incidence")
+    site <- input$crude_site_select
+    crude_both <- NULL
+    crude_female <- NULL
+    crude_male <- NULL
+    if ("Both" %in% input$crude_sex_select) {
+      crude_both <- compute_crude_incidence(data, pop_data, site, "Both")
+    }
+    if ("Female" %in% input$crude_sex_select) {
+      crude_female <- compute_crude_incidence(data, pop_data, site, "Female")
+    }
+    if ("Male" %in% input$crude_sex_select) {
+      crude_male <- compute_crude_incidence(data, pop_data, site, "Male")
+    }
+    list(both = crude_both, female = crude_female, male = crude_male)
+  })
+  
+  output$avg_crude_both <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Crude Incidence")
+    df <- crude_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Rate (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$crude_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Rate (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_crude_female <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Crude Incidence")
+    df <- crude_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Rate (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$crude_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Rate (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_crude_male <- renderValueBox({
+    req(credentials()$user_auth, input$metric == "Crude Incidence")
+    df <- crude_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Rate (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$crude_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Rate (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$crude_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$metric == "Crude Incidence")
+    dflist <- crude_data()
+    
+    # Initialize an empty ggplot object
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "Crude Incidence Rate per 100,000", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    # Add layers only if data exists and has rows
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = crude_rate, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = crude_rate, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = crude_rate, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = crude_rate, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = crude_rate, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = crude_rate, color = "Male"))
     }
     
     # If no data is plotted, add a message
@@ -1759,7 +1922,9 @@ server <- function(input, output, session) {
       filter(siteiarc != "Other and unspecified (O&U)") %>%
       group_by(siteiarc) %>% 
       nest() %>%
-      mutate(cases = map_dbl(data, nrow))
+      mutate(cases = map_dbl(data, nrow)) %>%
+      filter(cases >= 5)  # Only include sites with 5 or more cases
+    
     df_nested$surv5 <- map_dbl(df_nested$data, ~{
       if (nrow(.x) < 1) return(NA)
       fit <- survfit(Surv(time_days, event) ~ 1, data = .x)
@@ -1784,7 +1949,9 @@ server <- function(input, output, session) {
       filter(siteiarc != "Other and unspecified (O&U)") %>%
       group_by(siteiarc) %>% 
       nest() %>%
-      mutate(cases = map_dbl(data, nrow))
+      mutate(cases = map_dbl(data, nrow)) %>%
+      filter(cases >= 5)  # Only include sites with 5 or more cases
+    
     df_nested$surv5 <- map_dbl(df_nested$data, ~{
       if (nrow(.x) < 1) return(NA)
       fit <- survfit(Surv(time_days, event) ~ 1, data = .x)
@@ -1809,7 +1976,9 @@ server <- function(input, output, session) {
       filter(siteiarc != "Other and unspecified (O&U)") %>%
       group_by(siteiarc) %>% 
       nest() %>%
-      mutate(cases = map_dbl(data, nrow))
+      mutate(cases = map_dbl(data, nrow)) %>%
+      filter(cases >= 5)  # Only include sites with 5 or more cases
+    
     df_nested$surv5 <- map_dbl(df_nested$data, ~{
       if (nrow(.x) < 1) return(NA)
       fit <- survfit(Surv(time_days, event) ~ 1, data = .x)
