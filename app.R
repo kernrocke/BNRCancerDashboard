@@ -4,7 +4,7 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      13-SEP-2025
+##  date last modified      14-SEP-2025
 ##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
@@ -19,7 +19,7 @@
 #List of libaries needed
 libs <- c("shiny", "shinydashboard", "shinyauthr", "shinyjs", "sodium", "dplyr",
           "ggplot2", "DT", "lubridate", "survival", "plotly", "tidyr", "purrr",
-          "readxl", "qcc")
+          "readxl", "qcc", "officer", "rvg") 
 
 #Install missing libraries
 installed_libs <- libs %in% rownames(installed.packages())
@@ -185,6 +185,266 @@ compute_crude_incidence <- function(cancer_data, pop_data, site, sex_group) {
     select(year, crude_rate)
   
   crude_df
+}
+
+# Function to compute ASR trends for top 5 cancer sites
+compute_top5_asr_trends <- function(data, pop_data, who_weights) {
+  # Get top 5 cancer sites by total frequency (excluding O&U)
+  top5_sites <- data %>%
+    filter(siteiarc != "Other and unspecified (O&U)") %>%
+    count(siteiarc) %>%
+    arrange(desc(n)) %>%
+    head(5) %>%
+    pull(siteiarc)
+  
+  # Compute ASR for each of the top 5 sites
+  asr_trends <- map_dfr(top5_sites, ~{
+    site_data <- compute_asir(data, pop_data, who_weights, .x, "Both")
+    if(nrow(site_data) > 0) {
+      site_data$cancer_site <- .x
+      return(site_data)
+    } else {
+      return(NULL)
+    }
+  })
+  
+  return(asr_trends)
+}
+
+# Function to create PowerPoint report (enhanced version)
+create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights) {
+  # Create new PowerPoint presentation
+  ppt <- read_pptx()
+  
+  tryCatch({
+    # Title slide
+    ppt <- ppt %>%
+      add_slide(layout = "Title Slide", master = "Office Theme") %>%
+      ph_with(value = "Barbados National Cancer Registry", location = ph_location_type(type = "ctrTitle")) %>%
+      ph_with(value = paste("Dashboard Report -", Sys.Date()), location = ph_location_type(type = "subTitle"))
+    
+    # Summary Statistics Slide
+    total_cases <- nrow(data)
+    total_deaths <- nrow(mortality_data)
+    avg_age <- round(mean(data$age, na.rm = TRUE), 1)
+    avg_age_death <- round(mean(mortality_data$age, na.rm = TRUE), 1)
+    
+    summary_text <- paste0(
+      "• Total Incidental Cases: ", format(total_cases, big.mark = ","), "\n",
+      "• Total Deaths (2008-2024): ", format(total_deaths, big.mark = ","), "\n",
+      "• Average Age at Diagnosis: ", avg_age, " years\n",
+      "• Average Age at Death: ", avg_age_death, " years"
+    )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Key Statistics", location = ph_location_type(type = "title")) %>%
+      ph_with(value = summary_text, location = ph_location_type(type = "body"))
+    
+    # Top Cancer Sites Slide
+    top_sites <- data %>%
+      filter(siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10)
+    
+    # Create plot for top sites
+    top_sites_plot <- ggplot(top_sites, aes(x = reorder(siteiarc, n), y = n)) +
+      geom_bar(stat = "identity", fill = "steelblue") +
+      geom_text(aes(label = n), hjust = -0.2, size = 3) +
+      coord_flip() +
+      theme_minimal() +
+      labs(title = "Top 10 Cancer Sites (2013-2022)", 
+           x = "Cancer Site", y = "Number of Cases") +
+      theme(
+        axis.text = element_text(size = 9),
+        plot.title = element_text(size = 12, face = "bold"),
+        axis.text.y = element_text(size = 8)
+      )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Top 10 Cancer Sites", location = ph_location_type(type = "title")) %>%
+      ph_with(value = dml(ggobj = top_sites_plot), location = ph_location_type(type = "body"))
+    
+    # Cases Over Years Slide
+    cases_by_year <- data %>%
+      group_by(dxyr) %>%
+      summarise(cases = n(), .groups = 'drop')
+    
+    year_plot <- ggplot(cases_by_year, aes(x = dxyr, y = cases)) +
+      geom_bar(stat = "identity", fill = "darkgreen") +
+      geom_text(aes(label = cases), vjust = -0.5, size = 3) +
+      scale_x_continuous(breaks = seq(min(data$dxyr), max(data$dxyr), by = 1)) +
+      theme_minimal() +
+      labs(title = "Cancer Cases by Year (2013-2022)", 
+           x = "Year", y = "Number of Cases") +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(size = 12, face = "bold")
+      )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Incidence Trends", location = ph_location_type(type = "title")) %>%
+      ph_with(value = dml(ggobj = year_plot), location = ph_location_type(type = "body"))
+    
+    # NEW SLIDE: ASR Trends for Top 5 Cancers
+    asr_trends <- compute_top5_asr_trends(data, pop_data, who_weights)
+    
+    if(nrow(asr_trends) > 0) {
+      # Create color palette for the 5 lines
+      colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd")
+      
+      # Create the trend plot
+      asr_trend_plot <- ggplot(asr_trends, aes(x = year, y = asir, color = cancer_site)) +
+        geom_line(size = 1.2, alpha = 0.8) +
+        geom_point(size = 2.5, alpha = 0.9) +
+        scale_color_manual(values = colors) +
+        scale_x_continuous(breaks = seq(min(asr_trends$year), max(asr_trends$year), by = 1)) +
+        theme_minimal() +
+        labs(
+          title = "Age-Standardized Incidence Rate Trends\nTop 5 Cancer Sites (2013-2022)",
+          x = "Year", 
+          y = "ASIR per 100,000",
+          color = "Cancer Site"
+        ) +
+        theme(
+          plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+          axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+          axis.text.y = element_text(size = 9),
+          axis.title = element_text(size = 10),
+          legend.title = element_text(size = 10, face = "bold"),
+          legend.text = element_text(size = 8),
+          legend.position = "bottom",
+          legend.key.width = unit(1.5, "cm"),
+          panel.grid.minor = element_blank()
+        ) +
+        guides(color = guide_legend(
+          title = "Cancer Site",
+          override.aes = list(size = 3),
+          ncol = 1
+        ))
+      
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "ASR Trends - Top 5 Cancer Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = dml(ggobj = asr_trend_plot), location = ph_location_type(type = "body"))
+    } else {
+      # Fallback slide if ASR computation fails
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "ASR Trends - Top 5 Cancer Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = "Insufficient data to compute ASR trends for top cancer sites.", location = ph_location_type(type = "body"))
+    }
+    
+    # Age Distribution Slide
+    age_dist <- data %>%
+      mutate(age_group = cut(age, 
+                             breaks = c(0, 15, 65, Inf), 
+                             labels = c("Pediatric (0-14)", "Adult (15-64)", "Elderly (65+)"), 
+                             right = FALSE)) %>%
+      filter(!is.na(age_group)) %>%
+      count(age_group) %>%
+      mutate(percentage = round(n / sum(n) * 100, 1))
+    
+    age_plot <- ggplot(age_dist, aes(x = age_group, y = n, fill = age_group)) +
+      geom_bar(stat = "identity") +
+      geom_text(aes(label = paste0(n, " (", percentage, "%)")), vjust = -0.5, size = 3) +
+      scale_fill_manual(values = c("lightblue", "steelblue", "darkblue")) +
+      theme_minimal() +
+      labs(title = "Cases by Age Group", x = "Age Group", y = "Number of Cases") +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(size = 12, face = "bold"),
+        axis.text.x = element_text(size = 10)
+      )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Age Distribution", location = ph_location_type(type = "title")) %>%
+      ph_with(value = dml(ggobj = age_plot), location = ph_location_type(type = "body"))
+    
+    # Top Mortality Sites Slide
+    top_deaths <- mortality_data %>%
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10)
+    
+    if(nrow(top_deaths) > 0) {
+      death_plot <- ggplot(top_deaths, aes(x = reorder(siteiarc, n), y = n)) +
+        geom_bar(stat = "identity", fill = "darkred") +
+        geom_text(aes(label = n), hjust = -0.2, size = 3) +
+        coord_flip() +
+        theme_minimal() +
+        labs(title = "Top 10 Cancer Deaths (2008-2024)", 
+             x = "Cancer Site", y = "Number of Deaths") +
+        theme(
+          axis.text = element_text(size = 9),
+          plot.title = element_text(size = 12, face = "bold"),
+          axis.text.y = element_text(size = 8)
+        )
+      
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "Top 10 Mortality Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = dml(ggobj = death_plot), location = ph_location_type(type = "body"))
+    }
+    
+    # Data Quality Slide
+    data_quality <- data %>%
+      summarise(
+        n = n(),
+        mv_count = sum(grepl("Hx|Cytology|Lab|Haem", basis, ignore.case = TRUE), na.rm = TRUE),
+        dco_count = sum(basis == "DCO", na.rm = TRUE),
+        ill_def_count = sum(grepl("C76|C80|UNKNOWN", primarysite, ignore.case = TRUE) |
+                              grepl("C76|C80", top, ignore.case = TRUE), na.rm = TRUE)
+      ) %>%
+      mutate(
+        mv_prop = round(mv_count / n * 100, 1),
+        dco_prop = round(dco_count / n * 100, 1),
+        ill_def_prop = round(ill_def_count / n * 100, 1)
+      )
+    
+    quality_text <- paste0(
+      "• Microscopic Verification (MV%): ", data_quality$mv_prop, "%\n",
+      "• Death Certificate Only (DCO%): ", data_quality$dco_prop, "%\n",
+      "• Ill-Defined Sites%: ", data_quality$ill_def_prop, "%\n\n",
+      "Data quality indicators show the reliability and completeness of cancer registry data."
+    )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Data Quality Indicators", location = ph_location_type(type = "title")) %>%
+      ph_with(value = quality_text, location = ph_location_type(type = "body"))
+    
+    # Contact Information Slide
+    contact_text <- paste0(
+      "The Barbados National Registry (BNR)\n",
+      "The George Alleyne Chronic Disease Research Centre\n",
+      "UWI Avalon, Jemmotts Lane\n",
+      "Bridgetown, Barbados, W.I.\n\n",
+      "Tel: 246-426-6416\n",
+      "Fax: 246-426-8406\n",
+      "Email: bnr.uwi.edu"
+    )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Contact Information", location = ph_location_type(type = "title")) %>%
+      ph_with(value = contact_text, location = ph_location_type(type = "body"))
+    
+  }, error = function(e) {
+    warning(paste("Error creating PowerPoint:", e$message))
+    # Create a minimal presentation if there are errors
+    ppt <- read_pptx() %>%
+      add_slide(layout = "Title Slide", master = "Office Theme") %>%
+      ph_with(value = "BNR Cancer Registry Report", location = ph_location_type(type = "ctrTitle")) %>%
+      ph_with(value = "Report generation encountered an error", location = ph_location_type(type = "subTitle"))
+  })
+  
+  return(ppt)
 }
 
 # Preprocess data if needed (e.g., convert dates, etc.)
@@ -690,9 +950,31 @@ ui <- dashboardPage(
                     h2("Reports Page"),
                     fluidRow(
                       box(
-                        title = "Cancer Reports",
+                        title = "Available Cancer Reports",
                         DT::dataTableOutput("reports_table"),
                         width = 12
+                      )
+                    ),
+                    fluidRow(
+                      box(
+                        title = "Generate Custom Reports",
+                        width = 12,
+                        icon = icon("file-powerpoint"),
+                        p("Generate automated PowerPoint presentations with key statistics, 
+              visualizations, and data quality indicators from the dashboard."),
+                        p("The generated report includes:"),
+                        tags$ul(
+                          tags$li("Key statistics and demographics"),
+                          tags$li("Top cancer sites by incidence and mortality"),
+                          tags$li("Temporal trends in cancer cases"),
+                          tags$li("Age distribution analysis"),
+                          tags$li("Data quality indicators"),
+                          tags$li("Contact information")
+                        ),
+                        uiOutput("generate_ppt_button"),
+                        hr(),
+                        p(em("Note: Report generation may take 1-2 minutes depending on data size."), 
+                          style = "color: #888; font-size: 0.9em;")
                       )
                     )
             ),
@@ -1876,6 +2158,57 @@ server <- function(input, output, session) {
       colnames = c("Report Name", "Cancer Reporting Period", "", "Download")
     )
   })  
+  
+  # PowerPoint Report Generation
+  output$generate_ppt_button <- renderUI({
+    req(credentials()$user_auth)
+    div(
+      downloadButton("download_ppt", "Generate PowerPoint Report", 
+                     class = "btn btn-primary btn-lg", 
+                     style = "margin: 10px;"),
+      br(),
+      p("This will generate a comprehensive PowerPoint presentation with key statistics, 
+        visualizations, and data quality indicators from the dashboard.", 
+        style = "margin-top: 10px; color: #666;")
+    )
+  })
+  
+  output$download_ppt <- downloadHandler(
+    filename = function() {
+      paste0("BNR_Cancer_Registry_Report_", Sys.Date(), ".pptx")
+    },
+    content = function(file) {
+      # Show progress
+      withProgress(message = 'Generating PowerPoint Report...', value = 0, {
+        incProgress(0.1, detail = "Initializing...")
+        
+        # Check if required packages are loaded
+        if (!requireNamespace("officer", quietly = TRUE) || !requireNamespace("rvg", quietly = TRUE)) {
+          stop("Required packages 'officer' and 'rvg' are not installed.")
+        }
+        
+        incProgress(0.3, detail = "Processing data...")
+        
+        # Generate the PowerPoint
+        tryCatch({
+          ppt <- create_powerpoint_report(data, mortality_data, pop_data, who_weights)
+          incProgress(0.8, detail = "Creating file...")
+          
+          # Save the presentation
+          print(ppt, target = file)
+          incProgress(1, detail = "Complete!")
+          
+        }, error = function(e) {
+          # Create error file
+          cat("Error generating PowerPoint report:", e$message, file = file)
+          stop("Failed to generate PowerPoint report: ", e$message)
+        })
+      })
+    },
+    contentType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  )
+  
+  
   # Survival page
   parse_incidence <- function(x) {
     x <- as.character(x)
