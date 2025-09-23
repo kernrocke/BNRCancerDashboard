@@ -4,7 +4,7 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      13-SEP-2025
+##  date last modified      21-SEP-2025
 ##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
@@ -42,7 +42,7 @@ data <- read.csv("data/cancer_2013_2022_bnr.csv", stringsAsFactors = FALSE)
 mortality_data <- read.csv("data/cancer_death_2008_2024.csv", stringsAsFactors = FALSE)
 
 # Load population data from WPP.xlsx
-years <- c(2008, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023)
+years <- c(2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024)
 pop_data <- map2_dfr(seq_along(years), years, ~{
   read_excel("data/WPP.xlsx", sheet = .x) %>%
     mutate(year = .y)
@@ -361,6 +361,78 @@ parse_incidence <- function(x) {
   }, USE.NAMES = FALSE)
 }
 
+# Function to compute Age Standardized Mortality Rate (ASMR)
+compute_asmr <- function(mortality_data, pop_data, who_weights, site, sex_group) {
+  if (site == "All cancers") {
+    mort_df <- mortality_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    mort_df <- mortality_data %>% filter(siteiarc == site)
+  }
+  if (sex_group != "Both") {
+    mort_df <- mort_df %>% filter(sex == sex_group)
+  }
+  if (nrow(mort_df) == 0) {
+    return(data.frame(year = integer(), asmr = numeric()))
+  }
+  
+  mort_df <- mort_df %>%
+    mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), labels = 1:18, right = FALSE))) %>%
+    filter(!is.na(age_group)) %>%
+    group_by(year = dodyear, age_group) %>%
+    summarise(counts = n(), .groups = 'drop')
+  
+  years <- unique(mortality_data$dodyear)
+  age_groups <- 1:18
+  full_df <- expand_grid(year = years, age_group = age_groups) %>%
+    left_join(mort_df, by = c("year", "age_group")) %>%
+    mutate(counts = coalesce(counts, 0))
+  
+  if (sex_group == "Both") {
+    pop_df <- pop_data %>%
+      group_by(year, age5) %>%
+      summarise(pop = sum(pop_wpp), .groups = 'drop') %>%
+      rename(age_group = age5)
+  } else {
+    pop_df <- pop_data %>%
+      filter(sex == tolower(sex_group)) %>%
+      select(year, age_group = age5, pop = pop_wpp)
+  }
+  
+  full_df <- full_df %>%
+    left_join(pop_df, by = c("year", "age_group")) %>%
+    mutate(pop = coalesce(pop, 0),
+           age_rate = ifelse(pop > 0, counts / pop * 100000, 0)) %>%
+    group_by(year) %>%
+    summarise(asmr = sum(age_rate * who_weights[age_group]), .groups = 'drop')
+  
+  full_df
+}
+
+# Function to compute ASMR trends for top 5 fatal cancer sites
+compute_top5_asmr_trends <- function(mortality_data, pop_data, who_weights) {
+  # Get top 5 fatal cancer sites by total frequency (excluding O&U)
+  top5_fatal_sites <- mortality_data %>%
+    filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+    count(siteiarc) %>%
+    arrange(desc(n)) %>%
+    head(5) %>%
+    pull(siteiarc)
+  
+  # Compute ASMR for each of the top 5 fatal sites
+  asmr_trends <- map_dfr(top5_fatal_sites, ~{
+    site_data <- compute_asmr(mortality_data, pop_data, who_weights, .x, "Both")
+    if(nrow(site_data) > 0) {
+      site_data$cancer_site <- .x
+      return(site_data)
+    } else {
+      return(NULL)
+    }
+  })
+  
+  return(asmr_trends)
+}
+
+
 # Function to create PowerPoint report with specified slide order
 create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights) {
   # Create new PowerPoint presentation
@@ -421,8 +493,8 @@ create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights
     # SLIDE 4: Age Distribution
     age_dist <- data %>%
       mutate(age_group = cut(age, 
-                             breaks = c(0, 15, 65, Inf), 
-                             labels = c("Pediatric (0-14)", "Adult (15-64)", "Elderly (65+)"), 
+                             breaks = c(0, 18, 65, Inf), 
+                             labels = c("Pediatric (0-17)", "Adult (18-64)", "Elderly (65+)"), 
                              right = FALSE)) %>%
       filter(!is.na(age_group)) %>%
       count(age_group) %>%
@@ -492,7 +564,289 @@ create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights
       ph_with(value = "Top 10 Cancer Sites", location = ph_location_type(type = "title")) %>%
       ph_with(value = dml(ggobj = top_sites_plot), location = ph_location_type(type = "body"))
     
-    # SLIDE 7: Kaplan-Meier Survival Curves for Top 5 Cancer Sites
+    # SLIDE 7: Age Standardised Incidence Rate Trends by Sex
+    tryCatch({
+      # Compute ASIR for both sexes
+      asr_male <- compute_asir(data, pop_data, who_weights, "All cancers", "Male")
+      asr_female <- compute_asir(data, pop_data, who_weights, "All cancers", "Female")
+      
+      if(nrow(asr_male) > 0 && nrow(asr_female) > 0) {
+        # Combine data for plotting
+        asr_combined <- bind_rows(
+          asr_male %>% mutate(sex = "Male"),
+          asr_female %>% mutate(sex = "Female")
+        )
+        
+        # Create ASR trend plot by sex
+        asr_sex_plot <- ggplot(asr_combined, aes(x = year, y = asir, color = sex)) +
+          geom_line(size = 1.5, alpha = 0.8) +
+          geom_point(size = 3, alpha = 0.9) +
+          scale_color_manual(values = c("Male" = "#3182BD", "Female" = "#DD1C77")) +
+          scale_x_continuous(breaks = seq(min(asr_combined$year), max(asr_combined$year), by = 1)) +
+          theme_minimal() +
+          labs(
+            title = "Age Standardised Incidence Rate Trends by Sex\n(All Cancers, 2013-2022)",
+            x = "Year", 
+            y = "ASIR per 100,000",
+            color = "Sex"
+          ) +
+          theme(
+            plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+            axis.text = element_text(size = 11),
+            axis.title = element_text(size = 12),
+            legend.title = element_text(size = 12, face = "bold"),
+            legend.text = element_text(size = 11),
+            legend.position = "bottom",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            panel.grid.minor = element_blank()
+          )
+        
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "Age Standardised Incidence Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+          ph_with(value = dml(ggobj = asr_sex_plot), location = ph_location_type(type = "body"))
+        
+      } else {
+        # Fallback if no ASR data available
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "Age Standardised Incidence Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+          ph_with(value = "Insufficient data available for ASIR trend analysis by sex.", location = ph_location_type(type = "body"))
+      }
+      
+    }, error = function(e) {
+      warning(paste("Error creating ASIR by sex slide:", e$message))
+      # Add error slide
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "Age Standardised Incidence Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+        ph_with(value = "Error generating ASIR trends by sex.", location = ph_location_type(type = "body"))
+    })
+    
+    # SLIDE 8: Age Standardised Incidence Rate Trends for Top 5 Cancer Sites
+    tryCatch({
+      # Compute ASR trends for top 5 cancer sites
+      asr_top5_trends <- compute_top5_asr_trends(data, pop_data, who_weights)
+      
+      if(nrow(asr_top5_trends) > 0) {
+        # Create ASR trend plot for top 5 sites
+        asr_top5_plot <- ggplot(asr_top5_trends, aes(x = year, y = asir, color = cancer_site)) +
+          geom_line(size = 1.2, alpha = 0.8) +
+          geom_point(size = 2.5, alpha = 0.9) +
+          scale_color_manual(values = c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd")[1:length(unique(asr_top5_trends$cancer_site))]) +
+          scale_x_continuous(breaks = seq(min(asr_top5_trends$year), max(asr_top5_trends$year), by = 1)) +
+          theme_minimal() +
+          labs(
+            title = "Age Standardised Incidence Rate Trends\nTop 5 Cancer Sites (2013-2022)",
+            x = "Year", 
+            y = "ASIR per 100,000",
+            color = "Cancer Site"
+          ) +
+          theme(
+            plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+            axis.text = element_text(size = 9),
+            axis.title = element_text(size = 10),
+            legend.title = element_text(size = 10, face = "bold"),
+            legend.text = element_text(size = 8),
+            legend.position = "bottom",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            panel.grid.minor = element_blank()
+          ) +
+          guides(color = guide_legend(
+            title = "Cancer Site",
+            override.aes = list(size = 3),
+            ncol = 1
+          ))
+        
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "ASIR Trends - Top 5 Cancer Sites", location = ph_location_type(type = "title")) %>%
+          ph_with(value = dml(ggobj = asr_top5_plot), location = ph_location_type(type = "body"))
+        
+      } else {
+        # Fallback if no data available
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "ASIR Trends - Top 5 Cancer Sites", location = ph_location_type(type = "title")) %>%
+          ph_with(value = "Insufficient data available for top 5 cancer sites ASIR trend analysis.", location = ph_location_type(type = "body"))
+      }
+      
+    }, error = function(e) {
+      warning(paste("Error creating top 5 ASIR trends slide:", e$message))
+      # Add error slide
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "ASIR Trends - Top 5 Cancer Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = "Error generating ASIR trends for top 5 cancer sites.", location = ph_location_type(type = "body"))
+    })
+    
+    # SLIDE 9: Trend in cancer deaths
+    deaths_by_year <- mortality_data %>%
+      group_by(dodyear) %>%
+      summarise(deaths = n(), .groups = 'drop')
+    
+    deaths_trend_plot <- ggplot(deaths_by_year, aes(x = dodyear, y = deaths)) +
+      geom_bar(stat = "identity", fill = "darkred") +
+      geom_text(aes(label = deaths), vjust = -0.5, size = 3) +
+      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 2)) +
+      theme_minimal() +
+      labs(title = "Trend in Cancer Deaths by Year (2008-2024)", 
+           x = "Year", y = "Number of Deaths") +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(size = 12, face = "bold")
+      )
+    
+    ppt <- ppt %>%
+      add_slide(layout = "Title and Content", master = "Office Theme") %>%
+      ph_with(value = "Trend in Cancer Deaths", location = ph_location_type(type = "title")) %>%
+      ph_with(value = dml(ggobj = deaths_trend_plot), location = ph_location_type(type = "body"))
+    
+    
+    # NEW SLIDE 10: Age Standardised Mortality Rate Trends by Sex
+    tryCatch({
+      # Compute ASMR for both sexes
+      asmr_male <- compute_asmr(mortality_data, pop_data, who_weights, "All cancers", "Male")
+      asmr_female <- compute_asmr(mortality_data, pop_data, who_weights, "All cancers", "Female")
+      
+      if(nrow(asmr_male) > 0 && nrow(asmr_female) > 0) {
+        # Combine data for plotting
+        asmr_combined <- bind_rows(
+          asmr_male %>% mutate(sex = "Male"),
+          asmr_female %>% mutate(sex = "Female")
+        )
+        
+        # Create ASMR trend plot by sex
+        asmr_sex_plot <- ggplot(asmr_combined, aes(x = year, y = asmr, color = sex)) +
+          geom_line(size = 1.5, alpha = 0.8) +
+          geom_point(size = 3, alpha = 0.9) +
+          scale_color_manual(values = c("Male" = "#3182BD", "Female" = "#DD1C77")) +
+          scale_x_continuous(breaks = seq(min(asmr_combined$year), max(asmr_combined$year), by = 2)) +
+          theme_minimal() +
+          labs(
+            title = "Age Standardised Mortality Rate Trends by Sex\n(All Cancers, 2008-2024)",
+            x = "Year", 
+            y = "ASMR per 100,000",
+            color = "Sex"
+          ) +
+          theme(
+            plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+            axis.text = element_text(size = 11),
+            axis.title = element_text(size = 12),
+            legend.title = element_text(size = 12, face = "bold"),
+            legend.text = element_text(size = 11),
+            legend.position = "bottom",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            panel.grid.minor = element_blank()
+          )
+        
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "Age Standardised Mortality Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+          ph_with(value = dml(ggobj = asmr_sex_plot), location = ph_location_type(type = "body"))
+        
+      } else {
+        # Fallback if no ASMR data available
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "Age Standardised Mortality Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+          ph_with(value = "Insufficient data available for ASMR trend analysis by sex.", location = ph_location_type(type = "body"))
+      }
+      
+    }, error = function(e) {
+      warning(paste("Error creating ASMR by sex slide:", e$message))
+      # Add error slide
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "Age Standardised Mortality Rate Trends by Sex", location = ph_location_type(type = "title")) %>%
+        ph_with(value = "Error generating ASMR trends by sex.", location = ph_location_type(type = "body"))
+    })
+    
+    # SLIDE 11: Top 10 Mortality Sites
+    top_deaths <- mortality_data %>%
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(10)
+    
+    if(nrow(top_deaths) > 0) {
+      death_plot <- ggplot(top_deaths, aes(x = reorder(siteiarc, n), y = n)) +
+        geom_bar(stat = "identity", fill = "darkred") +
+        geom_text(aes(label = n), hjust = -0.2, size = 3) +
+        coord_flip() +
+        theme_minimal() +
+        labs(title = "Top 10 Cancer Deaths (2008-2024)", 
+             x = "Cancer Site", y = "Number of Deaths") +
+        theme(
+          axis.text = element_text(size = 9),
+          plot.title = element_text(size = 12, face = "bold"),
+          axis.text.y = element_text(size = 8)
+        )
+      
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "Top 10 Mortality Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = dml(ggobj = death_plot), location = ph_location_type(type = "body"))
+    }
+    
+     # SLIDE 12: Age Standardised Mortality Rate Trends for Top 5 Fatal Cancer Sites
+    tryCatch({
+      # Compute ASMR trends for top 5 fatal cancer sites
+      asmr_top5_trends <- compute_top5_asmr_trends(mortality_data, pop_data, who_weights)
+      
+      if(nrow(asmr_top5_trends) > 0) {
+        # Create ASMR trend plot for top 5 fatal sites
+        asmr_top5_plot <- ggplot(asmr_top5_trends, aes(x = year, y = asmr, color = cancer_site)) +
+          geom_line(size = 1.2, alpha = 0.8) +
+          geom_point(size = 2.5, alpha = 0.9) +
+          scale_color_manual(values = c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd")[1:length(unique(asmr_top5_trends$cancer_site))]) +
+          scale_x_continuous(breaks = seq(min(asmr_top5_trends$year), max(asmr_top5_trends$year), by = 2)) +
+          theme_minimal() +
+          labs(
+            title = "Age Standardised Mortality Rate Trends\nTop 5 Fatal Cancer Sites (2008-2024)",
+            x = "Year", 
+            y = "ASMR per 100,000",
+            color = "Cancer Site"
+          ) +
+          theme(
+            plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+            axis.text = element_text(size = 9),
+            axis.title = element_text(size = 10),
+            legend.title = element_text(size = 10, face = "bold"),
+            legend.text = element_text(size = 8),
+            legend.position = "bottom",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            panel.grid.minor = element_blank()
+          ) +
+          guides(color = guide_legend(
+            title = "Cancer Site",
+            override.aes = list(size = 3),
+            ncol = 1
+          ))
+        
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "ASMR Trends - Top 5 Fatal Cancer Sites", location = ph_location_type(type = "title")) %>%
+          ph_with(value = dml(ggobj = asmr_top5_plot), location = ph_location_type(type = "body"))
+        
+      } else {
+        # Fallback if no data available
+        ppt <- ppt %>%
+          add_slide(layout = "Title and Content", master = "Office Theme") %>%
+          ph_with(value = "ASMR Trends - Top 5 Fatal Cancer Sites", location = ph_location_type(type = "title")) %>%
+          ph_with(value = "Insufficient data available for top 5 fatal cancer sites ASMR trend analysis.", location = ph_location_type(type = "body"))
+      }
+      
+    }, error = function(e) {
+      warning(paste("Error creating top 5 ASMR trends slide:", e$message))
+      # Add error slide
+      ppt <- ppt %>%
+        add_slide(layout = "Title and Content", master = "Office Theme") %>%
+        ph_with(value = "ASMR Trends - Top 5 Fatal Cancer Sites", location = ph_location_type(type = "title")) %>%
+        ph_with(value = "Error generating ASMR trends for top 5 fatal cancer sites.", location = ph_location_type(type = "body"))
+    })
+    
+    # SLIDE 13: Kaplan-Meier Survival Curves for Top 5 Cancer Sites
     tryCatch({
       # Get top 5 cancer sites by frequency (excluding O&U)
       top5_sites <- data %>%
@@ -599,56 +953,7 @@ create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights
         ph_with(value = "Error generating Kaplan-Meier survival curves.", location = ph_location_type(type = "body"))
     })
     
-    # SLIDE 8: Trend in cancer deaths
-    deaths_by_year <- mortality_data %>%
-      group_by(dodyear) %>%
-      summarise(deaths = n(), .groups = 'drop')
-    
-    deaths_trend_plot <- ggplot(deaths_by_year, aes(x = dodyear, y = deaths)) +
-      geom_bar(stat = "identity", fill = "darkred") +
-      geom_text(aes(label = deaths), vjust = -0.5, size = 3) +
-      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 2)) +
-      theme_minimal() +
-      labs(title = "Trend in Cancer Deaths by Year (2008-2024)", 
-           x = "Year", y = "Number of Deaths") +
-      theme(
-        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
-        plot.title = element_text(size = 12, face = "bold")
-      )
-    
-    ppt <- ppt %>%
-      add_slide(layout = "Title and Content", master = "Office Theme") %>%
-      ph_with(value = "Trend in Cancer Deaths", location = ph_location_type(type = "title")) %>%
-      ph_with(value = dml(ggobj = deaths_trend_plot), location = ph_location_type(type = "body"))
-    
-    # SLIDE 9: Top 10 Mortality Sites
-    top_deaths <- mortality_data %>%
-      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
-      count(siteiarc) %>%
-      arrange(desc(n)) %>%
-      head(10)
-    
-    if(nrow(top_deaths) > 0) {
-      death_plot <- ggplot(top_deaths, aes(x = reorder(siteiarc, n), y = n)) +
-        geom_bar(stat = "identity", fill = "darkred") +
-        geom_text(aes(label = n), hjust = -0.2, size = 3) +
-        coord_flip() +
-        theme_minimal() +
-        labs(title = "Top 10 Cancer Deaths (2008-2024)", 
-             x = "Cancer Site", y = "Number of Deaths") +
-        theme(
-          axis.text = element_text(size = 9),
-          plot.title = element_text(size = 12, face = "bold"),
-          axis.text.y = element_text(size = 8)
-        )
-      
-      ppt <- ppt %>%
-        add_slide(layout = "Title and Content", master = "Office Theme") %>%
-        ph_with(value = "Top 10 Mortality Sites", location = ph_location_type(type = "title")) %>%
-        ph_with(value = dml(ggobj = death_plot), location = ph_location_type(type = "body"))
-    }
-    
-    # SLIDE 10: Contact Information
+    # SLIDE 14: Contact Information
     contact_text <- paste0(
       "The Barbados National Registry (BNR)\n",
       "The George Alleyne Chronic Disease Research Centre\n",
