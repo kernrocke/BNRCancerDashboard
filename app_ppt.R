@@ -4,7 +4,7 @@
 ##  project:                BNR
 ##  analysts:               Kern Rocke
 ##  date first created      18-AUG-2025
-##  date last modified      21-SEP-2025
+##  date last modified      07-FEB-2026
 ##  algorithm task          Create Dashboard for Barbados Cancer Registry
 ##  status                  Completed
 ##  objective               To have a dashboard for monitoring cancer registry data
@@ -17,18 +17,40 @@
 # Note: Add any new libraries to the list of libaries in libs
 
 #List of libaries needed
-libs <- c("shiny", "shinydashboard", "shinyauthr", "shinyjs", "sodium", "dplyr",
-          "ggplot2", "DT", "lubridate", "survival", "plotly", "tidyr", "purrr",
-          "readxl", "qcc", "officer", "rvg") 
+#libs <- c("shiny", "shinydashboard", "shinyauthr", "shinyjs", "sodium", "dplyr",
+#          "ggplot2", "DT", "lubridate", "survival", "plotly", "tidyr", "purrr",
+#          "readxl", "qcc", "officer", "rvg", "sf", "leaflet", "viridis") 
 
 #Install missing libraries
-installed_libs <- libs %in% rownames(installed.packages())
-if (any(installed_libs == F)) {
-  install.packages(libs[!installed_libs])
-}
+#installed_libs <- libs %in% rownames(installed.packages())
+#if (any(installed_libs == F)) {
+#  install.packages(libs[!installed_libs])
+#}
 
 #Load libraries
-invisible(lapply(libs, library, character.only = T))
+#invisible(lapply(libs, library, character.only = T))
+
+library(shiny)
+library(shinydashboard)
+library(shinyauthr)
+library(shinyjs)
+library(sodium)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(lubridate)
+library(survival)
+library(plotly)
+library(tidyr)
+library(purrr)
+library(readxl)
+library(qcc)
+library(officer)
+library(rvg)
+library(sf)          
+library(leaflet)     
+library(viridis)    
+
 #-------------------------------------------------------------------------------
 
 # User credentials
@@ -41,6 +63,12 @@ user_base <- tibble::tibble(
 data <- read.csv("data/cancer_2013_2022_bnr.csv", stringsAsFactors = FALSE)
 mortality_data <- read.csv("data/cancer_death_2008_2024.csv", stringsAsFactors = FALSE)
 
+# Load parish geo shapefile
+parish_shapefile <- st_read("data/Barbados_Parish.shp") 
+st_crs(parish_shapefile) <- 3857
+parish_shapefile <-  st_transform(parish_shapefile, 4326)
+parish_shapefile <- st_make_valid(parish_shapefile)
+
 # Load population data from WPP.xlsx
 years <- c(2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024)
 pop_data <- map2_dfr(seq_along(years), years, ~{
@@ -48,6 +76,87 @@ pop_data <- map2_dfr(seq_along(years), years, ~{
     mutate(year = .y)
 })
 pop_data$sex <- ifelse(pop_data$sex == 1, "male", "female")
+
+# Load parish population data
+parish_pop_raw <- read.csv("data/parish_population_by_age.csv", stringsAsFactors = FALSE)
+
+# Fix typo in Christ Church name
+parish_pop_raw$parish[parish_pop_raw$parish == "Christ Churc"] <- "Christ Church"
+
+# Convert 10-year age bands to 5-year age bands for WHO standardization
+# We'll approximate by splitting each 10-year band evenly
+parish_pop_by_age5 <- parish_pop_raw %>%
+  mutate(
+    # Ages 0-4 (half of 0-9)
+    age_0_4 = age_0_9 * 0.5,
+    # Ages 5-9 (half of 0-9)
+    age_5_9 = age_0_9 * 0.5,
+    # Ages 10-14 (half of 10-19)
+    age_10_14 = age_10_19 * 0.5,
+    # Ages 15-19 (half of 10-19)
+    age_15_19 = age_10_19 * 0.5,
+    # Ages 20-24 (half of 20-29)
+    age_20_24 = age_20_29 * 0.5,
+    # Ages 25-29 (half of 20-29)
+    age_25_29 = age_20_29 * 0.5,
+    # Ages 30-34 (half of 30-39)
+    age_30_34 = age_30_39 * 0.5,
+    # Ages 35-39 (half of 30-39)
+    age_35_39 = age_30_39 * 0.5,
+    # Ages 40-44 (half of 40-49)
+    age_40_44 = age_40_49 * 0.5,
+    # Ages 45-49 (half of 40-49)
+    age_45_49 = age_40_49 * 0.5,
+    # Ages 50-54 (half of 50-59)
+    age_50_54 = age_50_59 * 0.5,
+    # Ages 55-59 (half of 50-59)
+    age_55_59 = age_50_59 * 0.5,
+    # Ages 60-64 (half of 60-69)
+    age_60_64 = age_60_69 * 0.5,
+    # Ages 65-69 (half of 60-69)
+    age_65_69 = age_60_69 * 0.5,
+    # Ages 70-74 (half of 70-79)
+    age_70_74 = age_70_79 * 0.5,
+    # Ages 75-79 (half of 70-79)
+    age_75_79 = age_70_79 * 0.5,
+    # Ages 80-84 (half of 80-89)
+    age_80_84 = age_80_89 * 0.5,
+    # Ages 85+ (half of 80-89 + all 90+)
+    age_85_plus = age_80_89 * 0.5 + age_90_99 + age_100_plus
+  ) %>%
+  select(parish, total_pop, starts_with("age_"))
+
+# Reshape to long format for easier merging
+parish_pop_long <- parish_pop_by_age5 %>%
+  select(parish, age_0_4:age_85_plus) %>%
+  pivot_longer(
+    cols = starts_with("age_"),
+    names_to = "age_band",
+    values_to = "population"
+  ) %>%
+  mutate(
+    age_group = case_when(
+      age_band == "age_0_4" ~ 1,
+      age_band == "age_5_9" ~ 2,
+      age_band == "age_10_14" ~ 3,
+      age_band == "age_15_19" ~ 4,
+      age_band == "age_20_24" ~ 5,
+      age_band == "age_25_29" ~ 6,
+      age_band == "age_30_34" ~ 7,
+      age_band == "age_35_39" ~ 8,
+      age_band == "age_40_44" ~ 9,
+      age_band == "age_45_49" ~ 10,
+      age_band == "age_50_54" ~ 11,
+      age_band == "age_55_59" ~ 12,
+      age_band == "age_60_64" ~ 13,
+      age_band == "age_65_69" ~ 14,
+      age_band == "age_70_74" ~ 15,
+      age_band == "age_75_79" ~ 16,
+      age_band == "age_80_84" ~ 17,
+      age_band == "age_85_plus" ~ 18
+    )
+  ) %>%
+  select(parish, age_group, population)
 
 # WHO 2000 standard population weights for 18 age groups (0-4 to 85+)
 who_weights <- c(8860, 8690, 8590, 8470, 8220, 7930, 7610, 7150, 6590, 6040, 5380, 4550, 3720, 2960, 2210, 1520, 900, 600) / 100000
@@ -296,6 +405,281 @@ compute_prevalence <- function(data, pop_data, site, sex_group, prevalence_date 
     pop_total = pop_total,
     age_data = age_data
   ))
+}
+
+# Function to standardize parish names across datasets
+standardize_parish_names <- function(df, parish_col = "parish") {
+  if (!(parish_col %in% names(df))) {
+    return(df)
+  }
+  
+  df %>%
+    mutate(!!parish_col := case_when(
+      # Fix typo in Christ Church
+      !!sym(parish_col) %in% c("Christ Churc") ~ "Christ Church",
+      # Standardize St. abbreviations to Saint
+      !!sym(parish_col) %in% c("St. Andrew", "St Andrew", "St.Andrew") ~ "Saint Andrew",
+      !!sym(parish_col) %in% c("St. George", "St George", "St.George") ~ "Saint George",
+      !!sym(parish_col) %in% c("St. James", "St James", "St.James") ~ "Saint James",
+      !!sym(parish_col) %in% c("St. John", "St John", "St.John") ~ "Saint John",
+      !!sym(parish_col) %in% c("St. Joseph", "St Joseph", "St.Joseph") ~ "Saint Joseph",
+      !!sym(parish_col) %in% c("St. Lucy", "St Lucy", "St.Lucy") ~ "Saint Lucy",
+      !!sym(parish_col) %in% c("St. Michael", "St Michael", "St.Michael") ~ "Saint Michael",
+      !!sym(parish_col) %in% c("St. Peter", "St Peter", "St.Peter") ~ "Saint Peter",
+      !!sym(parish_col) %in% c("St. Philip", "St Philip", "St.Philip") ~ "Saint Philip",
+      !!sym(parish_col) %in% c("St. Thomas", "St Thomas", "St.Thomas") ~ "Saint Thomas",
+      TRUE ~ !!sym(parish_col)
+    ))
+}
+
+# Also standardize the parish population data names
+parish_pop_long <- standardize_parish_names(parish_pop_long, "parish")
+
+# Function to compute cancer cases by parish for top 5 cancers
+compute_parish_top5_cases <- function(cancer_data) {
+  # Get top 5 cancer sites by total frequency (excluding O&U)
+  top5_sites <- cancer_data %>%
+    filter(siteiarc != "Other and unspecified (O&U)") %>%
+    count(siteiarc) %>%
+    arrange(desc(n)) %>%
+    head(5) %>%
+    pull(siteiarc)
+  
+  # Count cases by parish for each top 5 cancer
+  parish_data <- cancer_data %>%
+    filter(siteiarc %in% top5_sites) %>%
+    filter(!is.na(parish), parish != "")
+  
+  # Standardize parish names
+  parish_data <- standardize_parish_names(parish_data, "parish")
+  
+  # Group and count
+  parish_data <- parish_data %>%
+    group_by(parish, siteiarc) %>%
+    summarise(cases = n(), .groups = 'drop')
+  
+  return(list(data = parish_data, top5 = top5_sites))
+}
+
+# Function to compute ASIR by parish using actual parish population data
+compute_parish_asir <- function(cancer_data, parish_pop_data, who_weights, site, sex_group) {
+  # Filter for site and sex
+  if (site == "All cancers") {
+    cancer_df <- cancer_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    cancer_df <- cancer_data %>% filter(siteiarc == site)
+  }
+  
+  if (sex_group != "Both") {
+    cancer_df <- cancer_df %>% filter(sex == tolower(sex_group))
+  }
+  
+  if (nrow(cancer_df) == 0 || !("parish" %in% names(cancer_df))) {
+    return(data.frame(parish = character(), asir = numeric()))
+  }
+  
+  # Standardize parish names in cancer data
+  cancer_df <- standardize_parish_names(cancer_df, "parish")
+  
+  # Create age groups (1-18 for WHO standard)
+  cancer_df <- cancer_df %>%
+    mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), 
+                                      labels = 1:18, right = FALSE))) %>%
+    filter(!is.na(age_group), !is.na(parish), parish != "")
+  
+  if (nrow(cancer_df) == 0) {
+    return(data.frame(parish = character(), asir = numeric()))
+  }
+  
+  # Calculate cancer counts by parish and age group
+  parish_cancer <- cancer_df %>%
+    group_by(parish, age_group) %>%
+    summarise(counts = n(), .groups = 'drop')
+  
+  # Get all unique parishes from the data
+  all_parishes <- unique(cancer_df$parish)
+  
+  # Create complete grid of parish x age_group combinations
+  parish_age_grid <- expand_grid(
+    parish = all_parishes,
+    age_group = 1:18
+  )
+  
+  # Merge cancer counts with the grid
+  parish_cancer_full <- parish_age_grid %>%
+    left_join(parish_cancer, by = c("parish", "age_group")) %>%
+    mutate(counts = coalesce(counts, 0))
+  
+  # For sex-specific calculations, we need to adjust population
+  # Since we don't have sex-specific parish populations, we'll use total and assume 50/50 split
+  # This is a limitation but reasonable for parish-level analysis
+  pop_multiplier <- if (sex_group == "Both") 1.0 else 0.5
+  
+  # Merge with parish population data
+  parish_cancer_pop <- parish_cancer_full %>%
+    left_join(parish_pop_data, by = c("parish", "age_group")) %>%
+    mutate(
+      population = coalesce(population * pop_multiplier, 0),
+      age_rate = ifelse(population > 0, counts / population * 100000, 0)
+    )
+  
+  # Calculate ASIR by parish using WHO weights
+  parish_asir <- parish_cancer_pop %>%
+    group_by(parish) %>%
+    summarise(
+      asir = sum(age_rate * who_weights[age_group]),
+      total_cases = sum(counts),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(asir))
+  
+  return(parish_asir)
+}
+
+# Function to compute mortality rate by parish using actual parish population data
+compute_parish_mortality <- function(mortality_data, parish_pop_data, who_weights, site, sex_group) {
+  # Filter for site and sex
+  if (site == "All cancers") {
+    mort_df <- mortality_data %>% filter(siteiarc != "Other and unspecified (O&U)")
+  } else {
+    mort_df <- mortality_data %>% filter(siteiarc == site)
+  }
+  
+  if (sex_group != "Both") {
+    mort_df <- mort_df %>% filter(sex == tolower(sex_group))
+  }
+  
+  if (nrow(mort_df) == 0 || !("parish" %in% names(mort_df))) {
+    return(data.frame(parish = character(), mortality_rate = numeric()))
+  }
+  
+  # Standardize parish names in mortality data
+  mort_df <- standardize_parish_names(mort_df, "parish")
+  
+  # Create age groups (1-18 for WHO standard)
+  mort_df <- mort_df %>%
+    mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), 
+                                      labels = 1:18, right = FALSE))) %>%
+    filter(!is.na(age_group), !is.na(parish), parish != "")
+  
+  if (nrow(mort_df) == 0) {
+    return(data.frame(parish = character(), mortality_rate = numeric()))
+  }
+  
+  # Calculate death counts by parish and age group
+  parish_deaths <- mort_df %>%
+    group_by(parish, age_group) %>%
+    summarise(deaths = n(), .groups = 'drop')
+  
+  # Get all unique parishes from the data
+  all_parishes <- unique(mort_df$parish)
+  
+  # Create complete grid of parish x age_group combinations
+  parish_age_grid <- expand_grid(
+    parish = all_parishes,
+    age_group = 1:18
+  )
+  
+  # Merge death counts with the grid
+  parish_deaths_full <- parish_age_grid %>%
+    left_join(parish_deaths, by = c("parish", "age_group")) %>%
+    mutate(deaths = coalesce(deaths, 0))
+  
+  # For sex-specific calculations, adjust population (assume 50/50 split)
+  pop_multiplier <- if (sex_group == "Both") 1.0 else 0.5
+  
+  # Merge with parish population data
+  parish_deaths_pop <- parish_deaths_full %>%
+    left_join(parish_pop_data, by = c("parish", "age_group")) %>%
+    mutate(
+      population = coalesce(population * pop_multiplier, 0),
+      age_rate = ifelse(population > 0, deaths / population * 100000, 0)
+    )
+  
+  # Calculate age-standardized mortality rate by parish using WHO weights
+  parish_mort <- parish_deaths_pop %>%
+    group_by(parish) %>%
+    summarise(
+      mortality_rate = sum(age_rate * who_weights[age_group]),
+      total_deaths = sum(deaths),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(mortality_rate))
+  
+  return(parish_mort)
+}
+
+# Function to create leaflet map
+create_parish_map <- function(shapefile, data_df, value_col, legend_title, map_values) {
+  
+  # Standardize parish names in data if parish column exists
+  if ("parish" %in% names(data_df)) {
+    data_df <- standardize_parish_names(data_df, "parish")
+  }
+  
+  # Merge shapefile with data
+  # Note: shapefile uses NAME_1, not PARISH_NAME
+  map_data <- shapefile %>%
+    left_join(data_df, by = c("NAME_1" = "parish"))
+  
+  # Check if we have any non-NA values
+  has_data <- any(!is.na(map_data[[value_col]]))
+  
+  if (!has_data) {
+    # Return a simple gray map with a message
+    return(
+      leaflet(map_data) %>%
+        addProviderTiles(providers$CartoDB.Positron) %>%
+        addPolygons(
+          fillColor = "#CCCCCC",
+          weight = 2,
+          opacity = 1,
+          color = "white",
+          dashArray = "3",
+          fillOpacity = 0.7
+        ) %>%
+        addControl("No data available for selected criteria", position = "topright")
+    )
+  }
+  
+  # Create color palette
+  pal <- colorNumeric(
+    palette = "YlOrRd",
+    domain = map_data[[value_col]],
+    na.color = "#808080"
+  )
+  
+  # Create leaflet map
+  leaflet(map_data) %>%
+    addProviderTiles(providers$CartoDB.Positron) %>%
+    addPolygons(
+      fillColor = ~pal(get(value_col)),
+      weight = 2,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlight = highlightOptions(
+        weight = 3,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.9,
+        bringToFront = TRUE
+      ),
+      label = ~paste0(NAME_1, ": ", round(get(value_col), 2)),
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto"
+      )
+    ) %>%
+    addLegend(
+      pal = pal,
+      values = ~get(value_col),
+      opacity = 0.7,
+      title = legend_title,
+      position = "bottomright"
+    )
 }
 
 # Function to get top prevalent cancers
@@ -789,7 +1173,7 @@ create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights
         ph_with(value = dml(ggobj = death_plot), location = ph_location_type(type = "body"))
     }
     
-     # SLIDE 12: Age Standardised Mortality Rate Trends for Top 5 Fatal Cancer Sites
+    # SLIDE 12: Age Standardised Mortality Rate Trends for Top 5 Fatal Cancer Sites
     tryCatch({
       # Compute ASMR trends for top 5 fatal cancer sites
       asmr_top5_trends <- compute_top5_asmr_trends(mortality_data, pop_data, who_weights)
@@ -984,6 +1368,8 @@ create_powerpoint_report <- function(data, mortality_data, pop_data, who_weights
 # Preprocess data if needed (e.g., convert dates, etc.)
 # Assuming dxyr is integer year, siteiarc is character
 
+# --- FULL CORRECTED UI SECTION ---
+
 ui <- dashboardPage(
   title = "BNR Cancer Registry Dashboard",
   dashboardHeader(
@@ -994,8 +1380,7 @@ ui <- dashboardPage(
     titleWidth = "100%"
   ),
   dashboardSidebar(
-    id = "sidebar",
-    # Move the shinyjs::hidden functionality here
+    id = "",
     div(
       id = "sidebar_content",
       sidebarMenu(
@@ -1027,12 +1412,11 @@ ui <- dashboardPage(
   .collaborator-text { text-align: left; font-size: 16px; font-weight: bold; }
   .login-container { max-width: 900px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
   
-  /* Hide sidebar initially - use specific selector to avoid conflicts */
+  /* Hide sidebar initially */
   body.not-authenticated .main-sidebar { display: none !important; }
   body.not-authenticated .content-wrapper { margin-left: 0 !important; }
   body.not-authenticated .main-header { margin-left: 0 !important; }
 "))
-      
     ),
     div(id = "loginpage",
         class = "login-container",
@@ -1055,7 +1439,8 @@ ui <- dashboardPage(
     shinyjs::hidden(
       div(id = "dashboard_content",
           tabItems(
-            # Home page with infographic
+            
+            # --- HOME PAGE ---
             tabItem(tabName = "home",
                     fluidRow(
                       valueBoxOutput("total_cases", width = 6),
@@ -1072,355 +1457,157 @@ ui <- dashboardPage(
                       valueBoxOutput("elderly_deaths", width = 3)
                     ),
                     fluidRow(
-                      box(
-                        title = "Cases Over Years (2013-2022)",
-                        plotOutput("cases_over_years"),
-                        width = 6
-                      ),
-                      box(
-                        title = "Top Cancer Sites (2013-2022)",
-                        DT::dataTableOutput("top_sites"),
-                        width = 6
-                      )
+                      box(title = "Cases Over Years (2013-2022)", plotOutput("cases_over_years"), width = 6),
+                      box(title = "Top Cancer Sites (2013-2022)", DT::dataTableOutput("top_sites"), width = 6)
+                    ),
+                    fluidRow(
+                      box(title = "Top 5 Pediatric Cancer Sites", DT::dataTableOutput("top5_pediatric_sites"), width = 6),
+                      box(title = "Top 5 Elderly Cancer Sites", DT::dataTableOutput("top5_elderly_sites"), width = 6)
+                    ),
+                    fluidRow(
+                      box(title = "Top 10 Cancer Deaths", DT::dataTableOutput("top10_deaths_both_home"), width = 6),
+                      box(title = "Top 10 Elderly Deaths", DT::dataTableOutput("top10_deaths_elderly_home"), width = 6)
+                    ),
+                    fluidRow(
+                      box(title = "Cases by Parish (2013-2022)", plotOutput("cases_by_parish"), width = 12)
                     ),
                     fluidRow(
                       box(
-                        title = "Top 5 Pediatric Cancer Sites (Age < 15) - 2013-2022",
-                        DT::dataTableOutput("top5_pediatric_sites"),
-                        width = 6
-                      ),
-                      box(
-                        title = "Top 5 Elderly Cancer Sites (Age ≥ 65) - 2013-2022",
-                        DT::dataTableOutput("top5_elderly_sites"),
-                        width = 6
-                      )
-                    ),
-                    fluidRow(
-                      box(
-                        title = "Top 10 Cancer Deaths (2008-2024)",
-                        DT::dataTableOutput("top10_deaths_both_home"),
-                        width = 6
-                      ),
-                      box(
-                        title = "Top 10 Elderly Deaths (Age ≥ 65) - 2008-2024",
-                        DT::dataTableOutput("top10_deaths_elderly_home"),
-                        width = 6
-                      )
-                    ),
-                    fluidRow(
-                      box(
-                        title = "Cases by Parish (2013-2022)",
-                        plotOutput("cases_by_parish"),
-                        width = 12
+                        title = "Top 5 Cancers by Parish - Number of Cases",
+                        width = 12, status = "primary", solidHeader = TRUE,
+                        selectInput("home_parish_cancer", "Select Cancer:", choices = NULL),
+                        leafletOutput("home_parish_map", height = 500)
                       )
                     )
             ),
-            # Incidence page
+            
+            # --- INCIDENCE PAGE ---
             tabItem(tabName = "incidence",
                     fluidRow(
-                      column(12,
-                             radioButtons("metric", "Select Metric:",
-                                          choices = c("Frequency", "Crude Incidence", "ASIR", "Cumulative Incidence"),
-                                          inline = TRUE)
-                      )
+                      column(12, radioButtons("metric", "Select Metric:", choices = c("Frequency", "Crude Incidence", "ASIR", "Cumulative Incidence"), inline = TRUE))
                     ),
                     conditionalPanel(
                       condition = "input.metric == 'Frequency'",
                       fluidRow(
-                        column(4,
-                               selectInput("year_select", "Select Year:",
-                                           choices = c("All", sort(unique(data$dxyr))),
-                                           selected = "All")
-                        ),
-                        column(4,
-                               selectInput("site_select", "Select Cancer Site:",
-                                           choices = c("All", sort(unique(data$siteiarc))),
-                                           selected = "All")
-                        )
+                        column(4, selectInput("year_select", "Select Year:", choices = c("All", sort(unique(data$dxyr))), selected = "All")),
+                        column(4, selectInput("site_select", "Select Cancer Site:", choices = c("All", sort(unique(data$siteiarc))), selected = "All"))
                       ),
+                      fluidRow(valueBoxOutput("num_cases", 4), valueBoxOutput("num_female_cases", 4), valueBoxOutput("num_male_cases", 4)),
+                      fluidRow(box(title = "Cases by Year", plotOutput("bar_graph"), 6), box(title = "Cases by Sex", plotOutput("sex_bar_graph"), 6)),
                       fluidRow(
-                        valueBoxOutput("num_cases", width = 4),
-                        valueBoxOutput("num_female_cases", width = 4),
-                        valueBoxOutput("num_male_cases", width = 4)
+                        box(title = "Top 10 Incidental Cancers", DT::dataTableOutput("top10_table"), 6),
+                        box(title = "Top 5 Incidental Cancers by Sex", div(class = "female-table", h4("FEMALES"), DT::dataTableOutput("top5_female_table")), div(class = "male-table", h4("MALES"), DT::dataTableOutput("top5_male_table")), 6)
                       ),
-                      fluidRow(
-                        box(
-                          title = "Cases by Year",
-                          plotOutput("bar_graph"),
-                          width = 6
-                        ),
-                        box(
-                          title = "Cases by Sex",
-                          plotOutput("sex_bar_graph"),
-                          width = 6
-                        )
-                      ),
-                      fluidRow(
-                        box(
-                          title = "Top 10 Incidental Cancers",
-                          DT::dataTableOutput("top10_table"),
-                          width = 6
-                        ),
-                        box(
-                          title = "Top 5 Incidental Cancers by Sex",
-                          div(class = "female-table",
-                              h4("FEMALES"),
-                              DT::dataTableOutput("top5_female_table")
-                          ),
-                          div(class = "male-table",
-                              h4("MALES"),
-                              DT::dataTableOutput("top5_male_table")
-                          ),
-                          width = 6
-                        )
-                      ),
-                      fluidRow(
-                        box(
-                          title = "Cases by 5-Year Age Bands",
-                          plotOutput("cases_by_age_bands"),
-                          width = 12
-                        )
-                      )
+                      fluidRow(box(title = "Cases by 5-Year Age Bands", plotOutput("cases_by_age_bands"), width = 12))
                     ),
                     conditionalPanel(
                       condition = "input.metric == 'Crude Incidence'",
-                      fluidRow(
-                        column(6,
-                               selectInput("crude_site_select", "Select Cancer Site:",
-                                           choices = NULL)
-                        ),
-                        column(6,
-                               checkboxGroupInput("crude_sex_select", "Select Sex:",
-                                                  choices = c("Both", "Female", "Male"),
-                                                  selected = c("Both", "Female", "Male"),
-                                                  inline = TRUE)
-                        )
-                      ),
-                      fluidRow(
-                        valueBoxOutput("avg_crude_both", width = 4),
-                        valueBoxOutput("avg_crude_female", width = 4),
-                        valueBoxOutput("avg_crude_male", width = 4)
-                      ),
-                      fluidRow(
-                        box(
-                          title = "Crude Incidence Rate Trend by Year",
-                          plotOutput("crude_line_graph"),
-                          width = 12
-                        )
-                      )
+                      fluidRow(column(6, selectInput("crude_site_select", "Select Cancer Site:", choices = NULL)), column(6, checkboxGroupInput("crude_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_crude_both", 4), valueBoxOutput("avg_crude_female", 4), valueBoxOutput("avg_crude_male", 4)),
+                      fluidRow(box(title = "Crude Incidence Rate Trend", plotOutput("crude_line_graph"), 12))
                     ),
                     conditionalPanel(
                       condition = "input.metric == 'ASIR'",
-                      fluidRow(
-                        column(6,
-                               selectInput("asir_site_select", "Select Cancer Site:",
-                                           choices = NULL)
-                        ),
-                        column(6,
-                               checkboxGroupInput("asir_sex_select", "Select Sex:",
-                                                  choices = c("Both", "Female", "Male"),
-                                                  selected = c("Both", "Female", "Male"),
-                                                  inline = TRUE)
-                        )
-                      ),
-                      fluidRow(
-                        valueBoxOutput("avg_asir_both", width = 4),
-                        valueBoxOutput("avg_asir_female", width = 4),
-                        valueBoxOutput("avg_asir_male", width = 4)
-                      ),
-                      fluidRow(
-                        box(
-                          title = "ASIR Trend by Year",
-                          plotOutput("asir_line_graph"),
-                          width = 12
-                        )
-                      )
+                      fluidRow(column(6, selectInput("asir_site_select", "Select Cancer Site:", NULL)), column(6, checkboxGroupInput("asir_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_asir_both", 4), valueBoxOutput("avg_asir_female", 4), valueBoxOutput("avg_asir_male", 4)),
+                      fluidRow(box(title = "ASIR Trend", plotOutput("asir_line_graph"), 12))
                     ),
                     conditionalPanel(
                       condition = "input.metric == 'Cumulative Incidence'",
-                      fluidRow(
-                        column(6,
-                               selectInput("cum_site_select", "Select Cancer Site:",
-                                           choices = NULL)
-                        ),
-                        column(6,
-                               checkboxGroupInput("cum_sex_select", "Select Sex:",
-                                                  choices = c("Both", "Female", "Male"),
-                                                  selected = c("Both", "Female", "Male"),
-                                                  inline = TRUE)
-                        )
-                      ),
-                      fluidRow(
-                        valueBoxOutput("avg_cum_both", width = 4),
-                        valueBoxOutput("avg_cum_female", width = 4),
-                        valueBoxOutput("avg_cum_male", width = 4)
-                      ),
-                      fluidRow(
-                        box(
-                          title = "Cumulative Incidence Trend by Year",
-                          plotOutput("cum_line_graph"),
-                          width = 12
-                        )
-                      )
+                      fluidRow(column(6, selectInput("cum_site_select", "Select Cancer Site:", NULL)), column(6, checkboxGroupInput("cum_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_cum_both", 4), valueBoxOutput("avg_cum_female", 4), valueBoxOutput("avg_cum_male", 4)),
+                      fluidRow(box(title = "Cumulative Incidence Trend", plotOutput("cum_line_graph"), 12))
+                    ),
+                    tabBox(
+                      title = "Parish-Level Incidence Maps", width = 12,
+                      tabPanel("Both Sexes", fluidRow(column(6, h4("All Cancers - ASIR"), leafletOutput("inc_parish_map_both_all")), column(6, h4("Top 5 Cancers - ASIR"), selectInput("inc_parish_cancer_both", "Select Cancer:", NULL), leafletOutput("inc_parish_map_both_top5")))),
+                      tabPanel("Males", fluidRow(column(6, h4("All Cancers - ASIR (Males)"), leafletOutput("inc_parish_map_male_all")), column(6, h4("Top 5 Cancers - ASIR (Males)"), selectInput("inc_parish_cancer_male", "Select Cancer:", NULL), leafletOutput("inc_parish_map_male_top5")))),
+                      tabPanel("Females", fluidRow(column(6, h4("All Cancers - ASIR (Females)"), leafletOutput("inc_parish_map_female_all")), column(6, h4("Top 5 Cancers - ASIR (Females)"), selectInput("inc_parish_cancer_female", "Select Cancer:", NULL), leafletOutput("inc_parish_map_female_top5"))))
                     )
             ),
-            # Mortality page
+            
+            # --- MORTALITY PAGE ---
             tabItem(tabName = "mortality",
                     fluidRow(
-                      column(4,
-                             selectInput("mort_year_select", "Select Year:",
-                                         choices = c("All", sort(unique(mortality_data$dodyear))),
-                                         selected = "All")
-                      ),
-                      column(4,
-                             selectInput("mort_site_select", "Select Cancer Site:",
-                                         choices = c("All", sort(unique(mortality_data$siteiarc))),
-                                         selected = "All")
-                      )
+                      column(12, radioButtons("mort_metric", "Select Metric:", choices = c("Frequency", "Crude Mortality", "ASMR", "Cumulative Mortality"), inline = TRUE))
                     ),
-                    fluidRow(
-                      valueBoxOutput("num_deaths", width = 4),
-                      valueBoxOutput("mort_female_deaths", width = 4),
-                      valueBoxOutput("mort_male_deaths", width = 4)
+                    
+                    # 1. Cumulative Mortality
+                    conditionalPanel(
+                      condition = "input.mort_metric == 'Cumulative Mortality'",
+                      fluidRow(column(6, selectInput("cum_mort_site_select", "Select Cancer Site:", NULL)), column(6, checkboxGroupInput("cum_mort_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_cum_mort_both", 4), valueBoxOutput("avg_cum_mort_female", 4), valueBoxOutput("avg_cum_mort_male", 4)),
+                      fluidRow(box(title = "Cumulative Mortality Trend", plotOutput("cum_mort_line_graph"), 12))
                     ),
-                    fluidRow(
-                      box(
-                        title = "Deaths by Year",
-                        plotOutput("deaths_by_year"),
-                        width = 6
+                    
+                    # 2. Frequency
+                    conditionalPanel(
+                      condition = "input.mort_metric == 'Frequency'",
+                      fluidRow(column(4, selectInput("mort_year_select", "Select Year:", choices = c("All", sort(unique(mortality_data$dodyear))), selected = "All")), 
+                               column(4, selectInput("mort_site_select", "Select Cancer Site:", choices = c("All", sort(unique(mortality_data$siteiarc))), selected = "All"))),
+                      fluidRow(valueBoxOutput("num_deaths", 4), valueBoxOutput("mort_female_deaths", 4), valueBoxOutput("mort_male_deaths", 4)),
+                      fluidRow(box(title = "Deaths by Year", plotOutput("deaths_by_year"), 6), box(title = "Deaths by Sex", plotOutput("deaths_by_sex"), 6)),
+                      fluidRow(
+                        box(title = "Top 10 Cancer Deaths", DT::dataTableOutput("top10_deaths_table"), 6),
+                        box(title = "Top 5 Cancer Deaths by Sex", div(class = "female-table", h4("FEMALES"), DT::dataTableOutput("top5_female_deaths_table")), div(class = "male-table", h4("MALES"), DT::dataTableOutput("top5_male_deaths_table")), 6)
                       ),
-                      box(
-                        title = "Deaths by Year and Sex",
-                        plotOutput("deaths_by_sex"),
-                        width = 6
-                      )
+                      fluidRow(box(title = "Deaths by 5-Year Age Bands", plotOutput("deaths_by_age_bands"), width = 12))
                     ),
-                    fluidRow(
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites (Both Sexes)", 
-                                 div(class = "both-table", DT::dataTableOutput("top_deaths_both")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites (Females)", 
-                                 div(class = "female-table", DT::dataTableOutput("top_deaths_female")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites (Males)", 
-                                 div(class = "male-table", DT::dataTableOutput("top_deaths_male")),
-                                 width = NULL)
-                      )
+                    
+                    # 3. Crude Mortality (FIXED: Now inside tabItem)
+                    conditionalPanel(
+                      condition = "input.mort_metric == 'Crude Mortality'",
+                      fluidRow(column(6, selectInput("crude_mort_site_select", "Select Cancer Site:", NULL)), column(6, checkboxGroupInput("crude_mort_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_crude_mort_both", 4), valueBoxOutput("avg_crude_mort_female", 4), valueBoxOutput("avg_crude_mort_male", 4)),
+                      fluidRow(box(title = "Crude Mortality Rate Trend", plotOutput("crude_mort_line_graph"), 12))
                     ),
-                    fluidRow(
-                      box(
-                        title = "Deaths by 5-Year Age Bands",
-                        plotOutput("deaths_by_age_bands"),
-                        width = 12
-                      )
+                    
+                    # 4. ASMR (FIXED: Now inside tabItem)
+                    conditionalPanel(
+                      condition = "input.mort_metric == 'ASMR'",
+                      fluidRow(column(6, selectInput("asmr_site_select", "Select Cancer Site:", NULL)), column(6, checkboxGroupInput("asmr_sex_select", "Select Sex:", choices = c("Both", "Female", "Male"), selected = c("Both", "Female", "Male"), inline = TRUE))),
+                      fluidRow(valueBoxOutput("avg_asmr_both", 4), valueBoxOutput("avg_asmr_female", 4), valueBoxOutput("avg_asmr_male", 4)),
+                      fluidRow(box(title = "ASMR Trend", plotOutput("asmr_line_graph"), 12))
+                    ),
+                    
+                    # Parish-Level Mortality Maps (FIXED: Now inside tabItem)
+                    tabBox(
+                      title = "Parish-Level Mortality Maps", width = 12,
+                      tabPanel("Both Sexes", fluidRow(column(6, h4("All Cancers - Mortality Rate"), leafletOutput("mort_parish_map_both_all")), column(6, h4("Top 5 Cancers - Mortality Rate"), selectInput("mort_parish_cancer_both", "Select Cancer:", NULL), leafletOutput("mort_parish_map_both_top5")))),
+                      tabPanel("Males", fluidRow(column(6, h4("All Cancers - Mortality Rate (Males)"), leafletOutput("mort_parish_map_male_all")), column(6, h4("Top 5 Cancers - Mortality Rate (Males)"), selectInput("mort_parish_cancer_male", "Select Cancer:", NULL), leafletOutput("mort_parish_map_male_top5")))),
+                      tabPanel("Females", fluidRow(column(6, h4("All Cancers - Mortality Rate (Females)"), leafletOutput("mort_parish_map_female_all")), column(6, h4("Top 5 Cancers - Mortality Rate (Females)"), selectInput("mort_parish_cancer_female", "Select Cancer:", NULL), leafletOutput("mort_parish_map_female_top5"))))
                     )
-            ),
-            # Survival page
+            ), # Correctly closes the Mortality Tab
+            
+            # --- SURVIVAL PAGE ---
             tabItem(tabName = "survival",
                     h2("Survival Page"),
+                    fluidRow(column(6, selectInput("surv_year_select", "Select Year:", choices = "All")), column(6, selectInput("surv_site_select", "Select Cancer Site:", choices = "All"))),
+                    fluidRow(column(4, plotlyOutput("gauge_1yr")), column(4, plotlyOutput("gauge_3yr")), column(4, plotlyOutput("gauge_5yr"))),
+                    fluidRow(box(title = "1-Year Survival by Age Band", plotOutput("surv_1yr_age"), width = 12)),
+                    fluidRow(box(title = "3-Year Survival by Age Band", plotOutput("surv_3yr_age"), width = 12)),
+                    fluidRow(box(title = "5-Year Survival by Age Band", plotOutput("surv_5yr_age"), width = 12)),
                     fluidRow(
-                      column(6,
-                             selectInput("surv_year_select", "Select Year:",
-                                         choices = c("All", sort(unique(data$dxyr))),
-                                         selected = "All")
-                      ),
-                      column(6,
-                             selectInput("surv_site_select", "Select Cancer Site:",
-                                         choices = c("All", sort(unique(data$siteiarc))),
-                                         selected = "All")
-                      )
-                    ),
-                    fluidRow(
-                      column(4, plotlyOutput("gauge_1yr")),
-                      column(4, plotlyOutput("gauge_3yr")),
-                      column(4, plotlyOutput("gauge_5yr"))
-                    ),
-                    fluidRow(
-                      box(
-                        title = "1-Year Survival by Age Band",
-                        plotOutput("surv_1yr_age"),
-                        width = 12
-                      )
-                    ),
-                    fluidRow(
-                      box(
-                        title = "3-Year Survival by Age Band",
-                        plotOutput("surv_3yr_age"),
-                        width = 12
-                      )
-                    ),
-                    fluidRow(
-                      box(
-                        title = "5-Year Survival by Age Band",
-                        plotOutput("surv_5yr_age"),
-                        width = 12
-                      )
-                    ),
-                    fluidRow(
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Both Sexes)", 
-                                 div(class = "both-table", DT::dataTableOutput("top_survival_both")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Males)", 
-                                 div(class = "male-surv-table", DT::dataTableOutput("top_survival_male")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Cancer Sites with Highest 5-Year Survival (Females)", 
-                                 div(class = "female-surv-table", DT::dataTableOutput("top_survival_female")),
-                                 width = NULL)
-                      )
+                      column(4, box(title = "Highest 5-Year Survival (Both)", div(class = "both-table", DT::dataTableOutput("top_survival_both")), width = NULL)),
+                      column(4, box(title = "Highest 5-Year Survival (Males)", div(class = "male-surv-table", DT::dataTableOutput("top_survival_male")), width = NULL)),
+                      column(4, box(title = "Highest 5-Year Survival (Females)", div(class = "female-surv-table", DT::dataTableOutput("top_survival_female")), width = NULL))
                     )
             ),
             
-            # Prevalence page
+            # --- PREVALENCE PAGE ---
             tabItem(tabName = "prevalence",
                     h2("Cancer Prevalence"),
+                    fluidRow(column(6, selectInput("prev_site_select", "Select Cancer Site:", choices = NULL))),
+                    fluidRow(valueBoxOutput("num_survivors", 4), valueBoxOutput("prevalence_rate", 4), valueBoxOutput("total_population", 4)),
+                    fluidRow(box(title = "Prevalence by Age Groups and Sex", plotOutput("prevalence_by_age_sex"), width = 12)),
                     fluidRow(
-                      column(6,
-                             selectInput("prev_site_select", "Select Cancer Site:",
-                                         choices = NULL)
-                      )
-                    ),
-                    fluidRow(
-                      valueBoxOutput("num_survivors", width = 4),
-                      valueBoxOutput("prevalence_rate", width = 4),
-                      valueBoxOutput("total_population", width = 4)
-                    ),
-                    fluidRow(
-                      box(
-                        title = "Prevalence by 5-Year Age Groups and Sex",
-                        plotOutput("prevalence_by_age_sex"),
-                        width = 12
-                      )
-                    ),
-                    fluidRow(
-                      column(4, 
-                             box(title = "Top 10 Most Prevalent Cancers (Both Sexes)", 
-                                 div(class = "both-table", DT::dataTableOutput("top_prevalence_both")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Most Prevalent Cancers (Females)", 
-                                 div(class = "female-table", DT::dataTableOutput("top_prevalence_female")),
-                                 width = NULL)
-                      ),
-                      column(4, 
-                             box(title = "Top 10 Most Prevalent Cancers (Males)", 
-                                 div(class = "male-table", DT::dataTableOutput("top_prevalence_male")),
-                                 width = NULL)
-                      )
+                      column(4, box(title = "Top 10 Most Prevalent (Both)", div(class = "both-table", DT::dataTableOutput("top_prevalence_both")), width = NULL)),
+                      column(4, box(title = "Top 10 Most Prevalent (Females)", div(class = "female-table", DT::dataTableOutput("top_prevalence_female")), width = NULL)),
+                      column(4, box(title = "Top 10 Most Prevalent (Males)", div(class = "male-table", DT::dataTableOutput("top_prevalence_male")), width = NULL))
                     )
             ),
             
-            # Data Quality page
+# Data Quality page
             tabItem(tabName = "data_quality",
                     h2("Data Quality Indicators (All Years)"),
                     tabsetPanel(
@@ -1517,11 +1704,7 @@ ui <- dashboardPage(
                       )
                     )
             ),
-            # Placeholder for other pages
-            tabItem(tabName = "projection",
-                    h2("Projection Page"),
-                    p(tags$strong("COMING SOON."))
-            ),
+
             tabItem(tabName = "reports",
                     h2("Reports Page"),
                     fluidRow(
@@ -1555,7 +1738,8 @@ ui <- dashboardPage(
                       )
                     )
             ),
-            tabItem(tabName = "additional",
+
+             tabItem(tabName = "additional",
                     h2(tags$strong("Additional Information")),
                     h3(tags$strong("BNR Cancer Registry Online Dashboard Release Notes")),
                     p("The data presented in the BNR Cancer Registry Online Dashboard can be used to examine the current landscape of cancer in Barbados, estimate disease burden, follow trends over time, and make comparisons across different cancer types, demographic groups, and geographic areas."),
@@ -1594,7 +1778,12 @@ ui <- dashboardPage(
                     h4(tags$strong("Data Quality")),
                     p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
             ),
-            tabItem(tabName = "contact",
+        # --- OTHER TABS ---
+        tabItem(tabName = "projection",
+        h2("Projection Page"),
+        p(tags$strong("COMING SOON."))
+        ),       
+             tabItem(tabName = "contact",
                     h2(tags$strong("Contact Us")),
                     p("Contact information for inquiries."),
                     p(" "),
@@ -1625,14 +1814,15 @@ ui <- dashboardPage(
                       column(2,
                              img(src = "uwi_logo.png", class = "collaborator-logo"),
                              p(class = "collaborator-text", "The University of the West Indies, Cave Hill Campus")
-                      )
-                    )
-            )
-          )
-      )
-    )
-  )
+                      ),
+          ) # End of tabItems
+      ) # End of dashboard_content div
+    ) # End of shinyjs::hidden
+  ) # End of dashboardBody
+) # End of dashboardPage
 )
+)
+
 
 server <- function(input, output, session) {
   
@@ -1670,6 +1860,12 @@ server <- function(input, output, session) {
       shinyjs::addClass(selector = "body", class = "not-authenticated")
       shinyjs::addClass(selector = "body", class = "sidebar-collapse")
     }
+  })
+  
+  # Create a reactive for the Top 5 Parish Data
+  parish_top5_data <- reactive({
+    req(credentials()$user_auth)
+    compute_parish_top5_cases(data)
   })
   
   # Home infographic calculations
@@ -2010,6 +2206,44 @@ server <- function(input, output, session) {
       rename(`Cancer Site` = siteiarc, Frequency = n)
   }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
+  # Update selectInputs for top 5 cancers
+  observe({
+    req(credentials()$user_auth)
+    
+    # 1. Define top5_sites here so it's available below
+    top5_sites <- data %>%
+      filter(siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(5) %>%
+      pull(siteiarc)
+    
+    # 2. Update the home page selector
+    updateSelectInput(session, "home_parish_cancer", choices = top5_sites, selected = top5_sites[1])
+    
+    # 3. Update the incidence page selectors
+    updateSelectInput(session, "inc_parish_cancer_both", choices = top5_sites, selected = top5_sites[1])
+    updateSelectInput(session, "inc_parish_cancer_male", choices = top5_sites, selected = top5_sites[1])
+    updateSelectInput(session, "inc_parish_cancer_female", choices = top5_sites, selected = top5_sites[1])
+  })
+  
+  # Render home parish map
+  output$home_parish_map <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$home_parish_cancer)
+    
+    # This will now work because parish_top5_data() is defined above
+    parish_data <- parish_top5_data()$data %>%
+      filter(siteiarc == input$home_parish_cancer)
+    
+    create_parish_map(
+      parish_shapefile, 
+      parish_data, 
+      "cases", 
+      paste("Number of Cases -", input$home_parish_cancer)
+    )
+  })
+  
   # Incidence page - ASIR
   asir_data <- reactive({
     req(credentials()$user_auth, input$metric == "ASIR")
@@ -2282,7 +2516,172 @@ server <- function(input, output, session) {
     p
   })
   
-  # Mortality page
+  # Update selectInputs for top 5 cancers (Incidence & Home)
+  observe({ 
+    req(credentials()$user_auth) 
+    
+    # Get the sites from our new reactive
+    sites <- parish_top5_data()$top5
+    
+    # Update all relevant dropdowns
+    updateSelectInput(session, "home_parish_cancer", choices = sites, selected = sites[1])
+    updateSelectInput(session, "inc_parish_cancer_both", choices = sites, selected = sites[1])
+    updateSelectInput(session, "inc_parish_cancer_male", choices = sites, selected = sites[1])
+    updateSelectInput(session, "inc_parish_cancer_female", choices = sites, selected = sites[1])
+  })
+  
+  # BOTH SEXES - All Cancers
+  output$inc_parish_map_both_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, "All cancers", "Both")
+    create_parish_map(parish_shapefile, parish_asir, "asir", "ASIR - All Cancers (Both Sexes)")
+  })
+  
+  # BOTH SEXES - Top 5
+  output$inc_parish_map_both_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$inc_parish_cancer_both)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, input$inc_parish_cancer_both, "Both")
+    create_parish_map(parish_shapefile, parish_asir, "asir", 
+                      paste("ASIR -", input$inc_parish_cancer_both, "(Both Sexes)"))
+  })
+  
+  # MALES - All Cancers
+  output$inc_parish_map_male_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, "All cancers", "Male")
+    create_parish_map(parish_shapefile, parish_asir, "asir", "ASIR - All Cancers (Males)")
+  })
+  
+  # MALES - Top 5
+  output$inc_parish_map_male_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$inc_parish_cancer_male)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, input$inc_parish_cancer_male, "Male")
+    create_parish_map(parish_shapefile, parish_asir, "asir", 
+                      paste("ASIR -", input$inc_parish_cancer_male, "(Males)"))
+  })
+  
+  # FEMALES - All Cancers
+  output$inc_parish_map_female_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, "All cancers", "Female")
+    create_parish_map(parish_shapefile, parish_asir, "asir", "ASIR - All Cancers (Females)")
+  })
+  
+  # FEMALES - Top 5
+  output$inc_parish_map_female_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$inc_parish_cancer_female)
+    parish_asir <- compute_parish_asir(data, parish_pop_long, who_weights, input$inc_parish_cancer_female, "Female")
+    create_parish_map(parish_shapefile, parish_asir, "asir", 
+                      paste("ASIR -", input$inc_parish_cancer_female, "(Females)"))
+  })
+  
+  observe({
+    # Get top 25 mortality sites
+    top25_mort_sites <- mortality_data %>%
+      filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(25) %>%
+      pull(siteiarc)
+    
+    updateSelectInput(session, "crude_mort_site_select", choices = c("All cancers", top25_mort_sites), selected = "All cancers")
+    updateSelectInput(session, "asmr_site_select", choices = c("All cancers", top25_mort_sites), selected = "All cancers")
+    updateSelectInput(session, "cum_mort_site_select", choices = c("All cancers", top25_mort_sites), selected = "All cancers")
+  })
+  
+  # Function to compute Cumulative Mortality (0-74 years)
+  compute_cumulative_mortality <- function(mortality_data, pop_data, site, sex_group) {
+    if (site == "All cancers") {
+      mort_df <- mortality_data %>% filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)")
+    } else {
+      mort_df <- mortality_data %>% filter(siteiarc == site)
+    }
+    if (sex_group != "Both") {
+      mort_df <- mort_df %>% filter(sex == sex_group)
+    }
+    if (nrow(mort_df) == 0) {
+      return(data.frame(year = integer(), cum_mort = numeric()))
+    }
+    mort_df <- mort_df %>%
+      mutate(age_group = as.numeric(cut(age, breaks = c(seq(0, 85, 5), Inf), labels = 1:18, right = FALSE))) %>%
+      filter(!is.na(age_group)) %>%
+      group_by(year = dodyear, age_group) %>%
+      summarise(counts = n(), .groups = 'drop')
+    
+    years <- unique(mortality_data$dodyear)
+    age_groups <- 1:18
+    full_df <- expand_grid(year = years, age_group = age_groups) %>%
+      left_join(mort_df, by = c("year", "age_group")) %>%
+      mutate(counts = coalesce(counts, 0))
+    
+    if (sex_group == "Both") {
+      pop_df <- pop_data %>%
+        group_by(year, age5) %>%
+        summarise(pop = sum(pop_wpp), .groups = 'drop') %>%
+        rename(age_group = age5)
+    } else {
+      pop_df <- pop_data %>%
+        filter(sex == tolower(sex_group)) %>%
+        select(year, age_group = age5, pop = pop_wpp)
+    }
+    
+    full_df <- full_df %>%
+      left_join(pop_df, by = c("year", "age_group")) %>%
+      mutate(pop = coalesce(pop, 0),
+             age_rate = ifelse(pop > 0, counts / pop * 100000, 0)) %>%
+      group_by(year) %>%
+      summarise(cum_mort = sum(age_rate[age_group %in% 1:15] * 5) / 100000 * 100, .groups = 'drop')
+    
+    full_df
+  }
+  
+  # Function to compute Crude Mortality Rate
+  compute_crude_mortality <- function(mortality_data, pop_data, site, sex_group) {
+    if (site == "All cancers") {
+      mort_df <- mortality_data %>% filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)")
+    } else {
+      mort_df <- mortality_data %>% filter(siteiarc == site)
+    }
+    if (sex_group != "Both") {
+      mort_df <- mort_df %>% filter(sex == sex_group)
+    }
+    if (nrow(mort_df) == 0) {
+      return(data.frame(year = integer(), crude_mort_rate = numeric()))
+    }
+    
+    # Count deaths by year
+    mort_counts <- mort_df %>%
+      group_by(year = dodyear) %>%
+      summarise(counts = n(), .groups = 'drop')
+    
+    # Get population data
+    if (sex_group == "Both") {
+      pop_df <- pop_data %>%
+        group_by(year) %>%
+        summarise(pop = sum(pop_wpp), .groups = 'drop')
+    } else {
+      pop_df <- pop_data %>%
+        filter(sex == tolower(sex_group)) %>%
+        group_by(year) %>%
+        summarise(pop = sum(pop_wpp), .groups = 'drop')
+    }
+    
+    # Merge mortality counts with population data
+    crude_df <- mort_counts %>%
+      left_join(pop_df, by = "year") %>%
+      mutate(
+        pop = coalesce(pop, 0),
+        crude_mort_rate = ifelse(pop > 0, counts / pop * 100000, 0)
+      ) %>%
+      select(year, crude_mort_rate)
+    
+    crude_df
+  }
+  
+  # Mortality page - Frequency (existing with updates)
   filtered_mort_data <- reactive({
     req(credentials()$user_auth)
     df <- mortality_data
@@ -2295,8 +2694,9 @@ server <- function(input, output, session) {
     df
   })
   
+  # Update existing mortality outputs to be conditional on Frequency metric
   output$num_deaths <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
     valueBox(
       nrow(filtered_mort_data()),
       "Number of Deaths (2008-2024)",
@@ -2306,7 +2706,7 @@ server <- function(input, output, session) {
   })
   
   output$mort_female_deaths <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
     female_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Female"))
     valueBox(
       female_deaths,
@@ -2317,7 +2717,7 @@ server <- function(input, output, session) {
   })
   
   output$mort_male_deaths <- renderValueBox({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
     male_deaths <- nrow(filtered_mort_data() %>% filter(sex == "Male"))
     valueBox(
       male_deaths,
@@ -2328,7 +2728,7 @@ server <- function(input, output, session) {
   })
   
   output$deaths_by_year <- renderPlot({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
     df <- mortality_data
     if (input$mort_site_select != "All") {
       df <- df %>% filter(siteiarc == input$mort_site_select)
@@ -2339,7 +2739,7 @@ server <- function(input, output, session) {
       ggplot(aes(x = dodyear, y = deaths)) +
       geom_bar(stat = "identity", fill = "red") +
       geom_text(aes(label = deaths, y = deaths * 1.01), vjust = -0.5, size = 5) +
-      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 1)) +
+      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 2)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
@@ -2349,7 +2749,7 @@ server <- function(input, output, session) {
   })
   
   output$deaths_by_sex <- renderPlot({
-    req(credentials()$user_auth)
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
     df <- mortality_data
     if (input$mort_site_select != "All") {
       df <- df %>% filter(siteiarc == input$mort_site_select)
@@ -2357,80 +2757,63 @@ server <- function(input, output, session) {
     df %>%
       group_by(dodyear, sex) %>%
       summarise(deaths = n(), .groups = 'drop') %>%
-      ggplot(aes(x = dodyear, y = deaths, color = sex, group = sex)) +
-      geom_line(size = 1) +
-      geom_point(size = 2) +
-      scale_color_manual(values = c("Female" = "#DD1C77", "Male" = "#3182BD")) +
-      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 1)) +
+      ggplot(aes(x = dodyear, y = deaths, fill = sex)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      scale_fill_manual(values = c("Female" = "#DD1C77", "Male" = "#3182BD")) +
+      scale_x_continuous(breaks = seq(min(mortality_data$dodyear), max(mortality_data$dodyear), by = 2)) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12), 
             axis.text.y = element_text(size = 12),
             axis.title.x = element_text(size = 14),
             axis.title.y = element_text(size = 14)) +
-      labs(x = "Year", y = "Number of Deaths", color = "Sex")
+      labs(title = "Deaths by Sex", x = "Year", y = "Number of Deaths")
   })
   
-  top_deaths_both <- reactive({
-    req(credentials()$user_auth)
-    df <- mortality_data
+  output$top10_deaths_table <- DT::renderDataTable({
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
+    year_df <- mortality_data
     if (input$mort_year_select != "All") {
-      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+      year_df <- year_df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
-    df %>%
+    year_df %>%
       filter(!is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
       head(10) %>%
       rename(`Cancer Site` = siteiarc, Frequency = n)
-  })
-  
-  output$top_deaths_both <- DT::renderDataTable({
-    req(credentials()$user_auth)
-    top_deaths_both()
   }, options = list(pageLength = 10, searching = FALSE))
   
-  top_deaths_female <- reactive({
-    req(credentials()$user_auth)
-    df <- mortality_data
+  output$top5_female_deaths_table <- DT::renderDataTable({
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
+    year_df <- mortality_data
     if (input$mort_year_select != "All") {
-      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+      year_df <- year_df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
-    df %>%
-      filter(sex == "Female" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+    year_df %>%
+      filter(sex == "Female", !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
-      head(10) %>%
+      head(5) %>%
       rename(`Cancer Site` = siteiarc, Frequency = n)
-  })
+  }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
-  output$top_deaths_female <- DT::renderDataTable({
-    req(credentials()$user_auth)
-    top_deaths_female()
-  }, options = list(pageLength = 10, searching = FALSE))
-  
-  top_deaths_male <- reactive({
-    req(credentials()$user_auth)
-    df <- mortality_data
+  output$top5_male_deaths_table <- DT::renderDataTable({
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
+    year_df <- mortality_data
     if (input$mort_year_select != "All") {
-      df <- df %>% filter(dodyear == as.integer(input$mort_year_select))
+      year_df <- year_df %>% filter(dodyear == as.integer(input$mort_year_select))
     }
-    df %>%
-      filter(sex == "Male" & !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
+    year_df %>%
+      filter(sex == "Male", !is.na(siteiarc) & siteiarc != "" & siteiarc != "Other and unspecified (O&U)") %>%
       count(siteiarc) %>%
       arrange(desc(n)) %>%
-      head(10) %>%
+      head(5) %>%
       rename(`Cancer Site` = siteiarc, Frequency = n)
-  })
-  
-  output$top_deaths_male <- DT::renderDataTable({
-    req(credentials()$user_auth)
-    top_deaths_male()
-  }, options = list(pageLength = 10, searching = FALSE))
+  }, options = list(pageLength = 5, searching = FALSE, dom = 't'))
   
   output$deaths_by_age_bands <- renderPlot({
-    req(credentials()$user_auth)
-    df <- filtered_mort_data()
-    df %>%
+    req(credentials()$user_auth, input$mort_metric == "Frequency")
+    filtered_mort_data() %>%
       mutate(age_band = cut(age, 
                             breaks = c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, Inf),
                             labels = c("0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", 
@@ -2448,7 +2831,350 @@ server <- function(input, output, session) {
             axis.text.y = element_text(size = 12),
             axis.title.x = element_text(size = 14),
             axis.title.y = element_text(size = 14)) +
-      labs(x = "Age Band", y = "Number of Deaths")
+      labs(title = "Deaths by 5-Year Age Bands", x = "Age Band", y = "Number of Deaths")
+  })
+  
+  # Mortality page - Crude Mortality
+  crude_mort_data <- reactive({
+    req(credentials()$user_auth, input$mort_metric == "Crude Mortality")
+    site <- input$crude_mort_site_select
+    crude_mort_both <- NULL
+    crude_mort_female <- NULL
+    crude_mort_male <- NULL
+    if ("Both" %in% input$crude_mort_sex_select) {
+      crude_mort_both <- compute_crude_mortality(mortality_data, pop_data, site, "Both")
+    }
+    if ("Female" %in% input$crude_mort_sex_select) {
+      crude_mort_female <- compute_crude_mortality(mortality_data, pop_data, site, "Female")
+    }
+    if ("Male" %in% input$crude_mort_sex_select) {
+      crude_mort_male <- compute_crude_mortality(mortality_data, pop_data, site, "Male")
+    }
+    list(both = crude_mort_both, female = crude_mort_female, male = crude_mort_male)
+  })
+  
+  output$avg_crude_mort_both <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Crude Mortality")
+    df <- crude_mort_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Mortality Rate (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$crude_mort_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Mortality Rate (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_crude_mort_female <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Crude Mortality")
+    df <- crude_mort_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Mortality Rate (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$crude_mort_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Mortality Rate (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_crude_mort_male <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Crude Mortality")
+    df <- crude_mort_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Crude Mortality Rate (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$crude_mort_rate, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Crude Mortality Rate (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$crude_mort_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$mort_metric == "Crude Mortality")
+    dflist <- crude_mort_data()
+    
+    # Initialize an empty ggplot object
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "Crude Mortality Rate per 100,000", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    # Add layers only if data exists and has rows
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = crude_mort_rate, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = crude_mort_rate, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = crude_mort_rate, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = crude_mort_rate, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = crude_mort_rate, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = crude_mort_rate, color = "Male"))
+    }
+    
+    # If no data is plotted, add a message
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
+  
+  # Mortality page - Cumulative Mortality
+  cum_mort_data <- reactive({
+    req(credentials()$user_auth, input$mort_metric == "Cumulative Mortality")
+    site <- input$cum_mort_site_select
+    cum_mort_both <- NULL
+    cum_mort_female <- NULL
+    cum_mort_male <- NULL
+    if ("Both" %in% input$cum_mort_sex_select) {
+      cum_mort_both <- compute_cumulative_mortality(mortality_data, pop_data, site, "Both")
+    }
+    if ("Female" %in% input$cum_mort_sex_select) {
+      cum_mort_female <- compute_cumulative_mortality(mortality_data, pop_data, site, "Female")
+    }
+    if ("Male" %in% input$cum_mort_sex_select) {
+      cum_mort_male <- compute_cumulative_mortality(mortality_data, pop_data, site, "Male")
+    }
+    list(both = cum_mort_both, female = cum_mort_female, male = cum_mort_male)
+  })
+  
+  output$avg_cum_mort_both <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Cumulative Mortality")
+    df <- cum_mort_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Mortality % (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$cum_mort, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Mortality % (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_cum_mort_female <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Cumulative Mortality")
+    df <- cum_mort_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Mortality % (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$cum_mort, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Mortality % (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_cum_mort_male <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "Cumulative Mortality")
+    df <- cum_mort_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average Cumulative Mortality % (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$cum_mort, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average Cumulative Mortality % (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$cum_mort_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$mort_metric == "Cumulative Mortality")
+    dflist <- cum_mort_data()
+    
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "Cumulative Mortality % (0-74 years)", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = cum_mort, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = cum_mort, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = cum_mort, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = cum_mort, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = cum_mort, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = cum_mort, color = "Male"))
+    }
+    
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
+  
+  # Mortality page - ASMR
+  asmr_data <- reactive({
+    req(credentials()$user_auth, input$mort_metric == "ASMR")
+    site <- input$asmr_site_select
+    asmr_both <- NULL
+    asmr_female <- NULL
+    asmr_male <- NULL
+    if ("Both" %in% input$asmr_sex_select) {
+      asmr_both <- compute_asmr(mortality_data, pop_data, who_weights, site, "Both")
+    }
+    if ("Female" %in% input$asmr_sex_select) {
+      asmr_female <- compute_asmr(mortality_data, pop_data, who_weights, site, "Female")
+    }
+    if ("Male" %in% input$asmr_sex_select) {
+      asmr_male <- compute_asmr(mortality_data, pop_data, who_weights, site, "Male")
+    }
+    list(both = asmr_both, female = asmr_female, male = asmr_male)
+  })
+  
+  output$avg_asmr_both <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "ASMR")
+    df <- asmr_data()$both
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASMR (Both)", icon = icon("users"), color = "green")
+    } else {
+      avg <- mean(df$asmr, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASMR (Both)", icon = icon("users"), color = "green")
+    }
+  })
+  
+  output$avg_asmr_female <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "ASMR")
+    df <- asmr_data()$female
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASMR (Female)", icon = icon("venus"), color = "maroon")
+    } else {
+      avg <- mean(df$asmr, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASMR (Female)", icon = icon("venus"), color = "maroon")
+    }
+  })
+  
+  output$avg_asmr_male <- renderValueBox({
+    req(credentials()$user_auth, input$mort_metric == "ASMR")
+    df <- asmr_data()$male
+    if (is.null(df) || nrow(df) == 0) {
+      valueBox("N/A", "Average ASMR (Male)", icon = icon("mars"), color = "blue")
+    } else {
+      avg <- mean(df$asmr, na.rm = TRUE)
+      valueBox(round(avg, 1), "Average ASMR (Male)", icon = icon("mars"), color = "blue")
+    }
+  })
+  
+  output$asmr_line_graph <- renderPlot({
+    req(credentials()$user_auth, input$mort_metric == "ASMR")
+    dflist <- asmr_data()
+    
+    # Initialize an empty ggplot object
+    p <- ggplot() +
+      theme_minimal() +
+      labs(x = "Year", y = "ASMR per 100,000", color = "Sex") +
+      scale_color_manual(values = c("Both" = "black", "Female" = "#DD1C77", "Male" = "#3182BD")) +
+      theme(
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 1),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black")
+      ) +
+      scale_x_continuous(breaks = scales::breaks_pretty(n = 10), labels = scales::label_number(accuracy = 1))
+    
+    # Add layers only if data exists and has rows
+    if (!is.null(dflist$both) && nrow(dflist$both) > 0) {
+      p <- p + geom_line(data = dflist$both, aes(x = year, y = asmr, color = "Both"), size = 1) +
+        geom_point(data = dflist$both, aes(x = year, y = asmr, color = "Both"))
+    }
+    if (!is.null(dflist$female) && nrow(dflist$female) > 0) {
+      p <- p + geom_line(data = dflist$female, aes(x = year, y = asmr, color = "Female"), size = 1) +
+        geom_point(data = dflist$female, aes(x = year, y = asmr, color = "Female"))
+    }
+    if (!is.null(dflist$male) && nrow(dflist$male) > 0) {
+      p <- p + geom_line(data = dflist$male, aes(x = year, y = asmr, color = "Male"), size = 1) +
+        geom_point(data = dflist$male, aes(x = year, y = asmr, color = "Male"))
+    }
+    
+    # If no data is plotted, add a message
+    if (is.null(dflist$both) && is.null(dflist$female) && is.null(dflist$male)) {
+      p <- p + annotate("text", x = 0.5, y = 0.5, label = "No Data Available", size = 5)
+    }
+    
+    p
+  })
+  
+  # Update selectInputs for top 5 cancers
+  observe({
+    req(credentials()$user_auth)
+    # Get top 5 from mortality data
+    top5_mort <- mortality_data %>%
+      filter(siteiarc != "Other and unspecified (O&U)") %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(5) %>%
+      pull(siteiarc)
+    
+    updateSelectInput(session, "mort_parish_cancer_both", choices = top5_mort, selected = top5_mort[1])
+    updateSelectInput(session, "mort_parish_cancer_male", choices = top5_mort, selected = top5_mort[1])
+    updateSelectInput(session, "mort_parish_cancer_female", choices = top5_mort, selected = top5_mort[1])
+  })
+  
+  # BOTH SEXES - All Cancers
+  output$mort_parish_map_both_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, "All cancers", "Both")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      "Mortality Rate - All Cancers (Both Sexes)")
+  })
+  
+  # BOTH SEXES - Top 5
+  output$mort_parish_map_both_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$mort_parish_cancer_both)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, 
+                                            input$mort_parish_cancer_both, "Both")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      paste("Mortality Rate -", input$mort_parish_cancer_both, "(Both Sexes)"))
+  })
+  
+  # MALES - All Cancers
+  output$mort_parish_map_male_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, "All cancers", "Male")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      "Mortality Rate - All Cancers (Males)")
+  })
+  
+  # MALES - Top 5
+  output$mort_parish_map_male_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$mort_parish_cancer_male)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, 
+                                            input$mort_parish_cancer_male, "Male")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      paste("Mortality Rate -", input$mort_parish_cancer_male, "(Males)"))
+  })
+  
+  # FEMALES - All Cancers
+  output$mort_parish_map_female_all <- renderLeaflet({
+    req(credentials()$user_auth)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, "All cancers", "Female")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      "Mortality Rate - All Cancers (Females)")
+  })
+  
+  # FEMALES - Top 5
+  output$mort_parish_map_female_top5 <- renderLeaflet({
+    req(credentials()$user_auth)
+    req(input$mort_parish_cancer_female)
+    parish_mort <- compute_parish_mortality(mortality_data, parish_pop_long, who_weights, 
+                                            input$mort_parish_cancer_female, "Female")
+    create_parish_map(parish_shapefile, parish_mort, "mortality_rate", 
+                      paste("Mortality Rate -", input$mort_parish_cancer_female, "(Females)"))
   })
   
   # Data quality calculations (for all years)
@@ -2669,7 +3395,7 @@ server <- function(input, output, session) {
     ")
   })
   
-  # Reports page
+# Reports page
   reports_data <- reactive({
     req(credentials()$user_auth)
     data.frame(
@@ -2679,7 +3405,8 @@ server <- function(input, output, session) {
         "Cancer in Barbados 2014",
         "Cancer in Barbados 2015",
         "Cancer in Barbados: Report 2022",
-        "Cancer in Barbados: Report 2024"
+        "Cancer in Barbados: Report 2024",
+        "Cancer in Barbados: Report 2025"
       ),
       Cancer_Reporting_Period = c(
         "2008",
@@ -2687,7 +3414,8 @@ server <- function(input, output, session) {
         "2014",
         "2015",
         "2016, 2017, 2018",
-        "2019, 2020"
+        "2019, 2020",
+        "2021, 2022"
       ),
       Cancer_Reporting_Period = c(
         "2008",
@@ -2695,7 +3423,8 @@ server <- function(input, output, session) {
         "2014",
         "2015",
         "2016, 2017, 2018",
-        "2019, 2020"
+        "2019, 2020",
+        "2021, 2022"
       ),
       File_Name = c(
         "BNR-C_ann_rpt_2008_final.pdf",
@@ -2703,7 +3432,8 @@ server <- function(input, output, session) {
         "Cancer Report 2014- Final Draft_20190905.pdf",
         "20220506_BNRAnnualReport2015.pdf",
         "BNR Cancer Annual Report 2022.pdf",
-        "BNR Cancer Annual Report 2024_2019 and 2020_Final Draft.pdf"
+        "BNR Cancer Annual Report 2024_2019 and 2020_Final Draft.pdf",
+        "BNR Cancer Annual Report 2025_Years 2021-2022_(FINAL).pdf"
       ),
       stringsAsFactors = FALSE
     )
@@ -3235,7 +3965,7 @@ server <- function(input, output, session) {
     req(credentials()$user_auth)
     get_top_prevalent_cancers(data, "Male")
   }, options = list(pageLength = 10, searching = FALSE))
-    
+  
 }
 
 # Run the application
