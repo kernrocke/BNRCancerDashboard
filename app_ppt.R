@@ -35,7 +35,6 @@ library(shinydashboard)
 library(shinyauthr)
 library(shinyjs)
 library(sodium)
-library(dplyr)
 library(ggplot2)
 library(DT)
 library(lubridate)
@@ -49,7 +48,10 @@ library(officer)
 library(rvg)
 library(sf)          
 library(leaflet)     
-library(viridis)    
+library(viridis)
+library(dplyr)      # loaded last so dplyr::select() wins over sf/rvg/MASS conflicts
+# MASS is used via MASS::glm.nb() only — not attached to avoid masking dplyr::select()
+if (!requireNamespace("MASS", quietly = TRUE)) install.packages("MASS")
 
 #-------------------------------------------------------------------------------
 
@@ -124,11 +126,11 @@ parish_pop_by_age5 <- parish_pop_raw %>%
     # Ages 85+ (half of 80-89 + all 90+)
     age_85_plus = age_80_89 * 0.5 + age_90_99 + age_100_plus
   ) %>%
-  select(parish, total_pop, starts_with("age_"))
+  dplyr::select(parish, total_pop, starts_with("age_"))
 
 # Reshape to long format for easier merging
 parish_pop_long <- parish_pop_by_age5 %>%
-  select(parish, age_0_4:age_85_plus) %>%
+  dplyr::select(parish, age_0_4:age_85_plus) %>%
   pivot_longer(
     cols = starts_with("age_"),
     names_to = "age_band",
@@ -156,7 +158,7 @@ parish_pop_long <- parish_pop_by_age5 %>%
       age_band == "age_85_plus" ~ 18
     )
   ) %>%
-  select(parish, age_group, population)
+  dplyr::select(parish, age_group, population)
 
 # WHO 2000 standard population weights for 18 age groups (0-4 to 85+)
 who_weights <- c(8860, 8690, 8590, 8470, 8220, 7930, 7610, 7150, 6590, 6040, 5380, 4550, 3720, 2960, 2210, 1520, 900, 600) / 100000
@@ -194,7 +196,7 @@ compute_asir <- function(cancer_data, pop_data, who_weights, site, sex_group) {
   } else {
     pop_df <- pop_data %>%
       filter(sex == tolower(sex_group)) %>%
-      select(year, age_group = age5, pop = pop_wpp)
+      dplyr::select(year, age_group = age5, pop = pop_wpp)
   }
   
   full_df <- full_df %>%
@@ -240,7 +242,7 @@ compute_cuminc <- function(cancer_data, pop_data, site, sex_group) {
   } else {
     pop_df <- pop_data %>%
       filter(sex == tolower(sex_group)) %>%
-      select(year, age_group = age5, pop = pop_wpp)
+      dplyr::select(year, age_group = age5, pop = pop_wpp)
   }
   
   full_df <- full_df %>%
@@ -779,7 +781,7 @@ compute_asmr <- function(mortality_data, pop_data, who_weights, site, sex_group)
   } else {
     pop_df <- pop_data %>%
       filter(sex == tolower(sex_group)) %>%
-      select(year, age_group = age5, pop = pop_wpp)
+      dplyr::select(year, age_group = age5, pop = pop_wpp)
   }
   
   full_df <- full_df %>%
@@ -1383,17 +1385,21 @@ ui <- dashboardPage(
     id = "",
     div(
       id = "sidebar_content",
-      sidebarMenu(
-        menuItem("Home", tabName = "home", icon = icon("home")),
-        menuItem("Incidence", tabName = "incidence", icon = icon("chart-bar")),
-        menuItem("Mortality", tabName = "mortality", icon = icon("skull-crossbones")),
-        menuItem("Survival", tabName = "survival", icon = icon("heartbeat")),
-        menuItem("Prevalence", tabName = "prevalence", icon = icon("user-check")),
-        menuItem("Projection", tabName = "projection", icon = icon("chart-line")),
-        menuItem("Data Quality", tabName = "data_quality", icon = icon("check-circle")),
-        menuItem("Reports", tabName = "reports", icon = icon("file-alt")),
-        menuItem("Additional Information", tabName = "additional", icon = icon("info-circle")),
-        menuItem("Contact Us", tabName = "contact", icon = icon("envelope"))
+      sidebarMenu(id = "tabs",
+                  menuItem("Home", tabName = "home_landing", icon = icon("home")),
+                  menuItem("About", tabName = "about", icon = icon("question-circle")),
+                  menuItem("Modules", icon = icon("th"), startExpanded = FALSE,
+                           menuSubItem("Overview",     tabName = "home",         icon = icon("tachometer-alt")),
+                           menuSubItem("Incidence",    tabName = "incidence",    icon = icon("chart-bar")),
+                           menuSubItem("Mortality",    tabName = "mortality",    icon = icon("skull-crossbones")),
+                           menuSubItem("Survival",     tabName = "survival",     icon = icon("heartbeat")),
+                           menuSubItem("Prevalence",   tabName = "prevalence",   icon = icon("user-check")),
+                           menuSubItem("Projection",   tabName = "projection",   icon = icon("chart-line")),
+                           menuSubItem("Data Quality", tabName = "data_quality", icon = icon("check-circle")),
+                           menuSubItem("Reports",      tabName = "reports",      icon = icon("file-alt"))
+                  ),
+                  menuItem("Additional Information", tabName = "additional", icon = icon("info-circle")),
+                  menuItem("Contact Us",             tabName = "contact",    icon = icon("envelope"))
       )
     )
   ),
@@ -1416,6 +1422,18 @@ ui <- dashboardPage(
   body.not-authenticated .main-sidebar { display: none !important; }
   body.not-authenticated .content-wrapper { margin-left: 0 !important; }
   body.not-authenticated .main-header { margin-left: 0 !important; }
+
+  /* Increase font size of Modules dropdown sub-items */
+  .sidebar-menu .treeview-menu > li > a {
+    font-size: 15px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .sidebar-menu .treeview-menu > li > a > .fa,
+  .sidebar-menu .treeview-menu > li > a > .glyphicon,
+  .sidebar-menu .treeview-menu > li > a > svg {
+    font-size: 15px !important;
+  }
 "))
     ),
     div(id = "loginpage",
@@ -1440,7 +1458,142 @@ ui <- dashboardPage(
       div(id = "dashboard_content",
           tabItems(
             
-            # --- HOME PAGE ---
+            # --- HOME / LANDING PAGE ---
+            tabItem(tabName = "home_landing",
+                    tags$head(tags$style(HTML("
+                      .module-card {
+                        background: #ffffff;
+                        border-radius: 10px;
+                        padding: 24px 20px;
+                        text-align: center;
+                        cursor: pointer;
+                        transition: transform 0.2s, box-shadow 0.2s;
+                        border-top: 5px solid #253494;
+                        height: 100%;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+                      }
+                      .module-card:hover {
+                        transform: translateY(-4px);
+                        box-shadow: 0 8px 24px rgba(37,52,148,0.18);
+                      }
+                      .module-card .card-icon {
+                        font-size: 38px;
+                        margin-bottom: 12px;
+                      }
+                      .module-card h4 {
+                        font-weight: bold;
+                        color: #253494;
+                        margin-bottom: 8px;
+                        font-size: 17px;
+                      }
+                      .module-card p {
+                        font-size: 13px;
+                        color: #555;
+                        margin: 0;
+                      }
+                      .bnr-hero {
+                        background: linear-gradient(135deg, #253494 0%, #1a6fc4 100%);
+                        border-radius: 12px;
+                        padding: 36px 30px 28px 30px;
+                        color: #ffffff;
+                        margin-bottom: 28px;
+                      }
+                      .bnr-hero h1 { font-size: 28px; font-weight: bold; margin-bottom: 10px; }
+                      .bnr-hero p  { font-size: 15px; opacity: 0.92; margin-bottom: 0; }
+                      .module-row { margin-bottom: 20px; }
+                    "))),
+                    fluidRow(
+                      column(12,
+                             div(class = "bnr-hero",
+                                 h1(icon("ribbon"), "  Barbados National Cancer Registry"),
+                                 p("The BNR Cancer Registry Dashboard is a secure, web-based platform providing authorised users with
+                            comprehensive cancer surveillance data for Barbados. It supports evidence-based decision-making
+                            for public health professionals, researchers, and policymakers."),
+                                 br(),
+                                 p(tags$strong("The dashboard contains 8 modules:"),
+                                   " Overview · Incidence · Mortality · Survival · Prevalence · Projections · Data Quality · Reports."),
+                                 p("Select any module below to navigate directly to it.")
+                             )
+                      )
+                    ),
+                    # Row 1: Overview, Incidence, Mortality, Survival
+                    fluidRow(
+                      class = "module-row",
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'home', {priority: 'event'})",
+                                 div(class = "card-icon", icon("tachometer-alt", style = "color:#253494;")),
+                                 h4("Overview"),
+                                 p("Key statistics, case trends, top cancer sites and geographic distribution for Barbados.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'incidence', {priority: 'event'})",
+                                 div(class = "card-icon", icon("chart-bar", style = "color:#1a6fc4;")),
+                                 h4("Incidence"),
+                                 p("New cancer cases by year, site and sex. Includes crude rates, ASIR and cumulative incidence.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'mortality', {priority: 'event'})",
+                                 div(class = "card-icon", icon("skull-crossbones", style = "color:#c0392b;")),
+                                 h4("Mortality"),
+                                 p("Cancer deaths from 2008–2024. Explore crude and age-standardised mortality rates by parish.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'survival', {priority: 'event'})",
+                                 div(class = "card-icon", icon("heartbeat", style = "color:#27ae60;")),
+                                 h4("Survival"),
+                                 p("Kaplan-Meier survival curves and 1-, 3-, and 5-year survival probabilities by site and sex.")
+                             )
+                      )
+                    ),
+                    # Row 2: Prevalence, Projection, Data Quality, Reports
+                    fluidRow(
+                      class = "module-row",
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'prevalence', {priority: 'event'})",
+                                 div(class = "card-icon", icon("user-check", style = "color:#e67e22;")),
+                                 h4("Prevalence"),
+                                 p("Number and proportion of cancer survivors living in Barbados as of 31 December 2022.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'projection', {priority: 'event'})",
+                                 div(class = "card-icon", icon("chart-line", style = "color:#8e44ad;")),
+                                 h4("Projections"),
+                                 p("Statistical forecasts of future cancer incidence and mortality based on historical trends.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'data_quality', {priority: 'event'})",
+                                 div(class = "card-icon", icon("check-circle", style = "color:#16a085;")),
+                                 h4("Data Quality"),
+                                 p("Microscopic verification, death certificate only, and ill-defined site indicators.")
+                             )
+                      ),
+                      column(3,
+                             div(class = "module-card", onclick = "Shiny.setInputValue('home_nav', 'reports', {priority: 'event'})",
+                                 div(class = "card-icon", icon("file-alt", style = "color:#2980b9;")),
+                                 h4("Reports"),
+                                 p("Generate and download a comprehensive PowerPoint report summarising all key findings.")
+                             )
+                      )
+                    ),
+                    fluidRow(
+                      column(12,
+                             hr(),
+                             p(style = "font-size: 12px; color: #888; text-align: center;",
+                               icon("info-circle"),
+                               " Data covers cancer incidence (2013–2022) and mortality (2008–2024) for Barbados. ",
+                               "Population estimates are sourced from the UN World Population Prospects (WPP). ",
+                               "For access or data enquiries, please contact the BNR via the Contact Us section."
+                             )
+                      )
+                    )
+            ),
+            
+            # --- OVERVIEW PAGE (formerly Home) ---
             tabItem(tabName = "home",
                     fluidRow(
                       valueBoxOutput("total_cases", width = 6),
@@ -1477,6 +1630,129 @@ ui <- dashboardPage(
                         width = 12, status = "primary", solidHeader = TRUE,
                         selectInput("home_parish_cancer", "Select Cancer:", choices = NULL),
                         leafletOutput("home_parish_map", height = 500)
+                      )
+                    )
+            ),
+            
+            # --- ABOUT PAGE ---
+            tabItem(tabName = "about",
+                    fluidRow(
+                      column(12,
+                             h2(icon("question-circle"), " About This Dashboard",
+                                style = "color: #253494; font-weight: bold; margin-bottom: 20px;"),
+                             p(style = "font-size: 16px; color: #555;",
+                               "Welcome to the ", tags$strong("Barbados National Cancer Registry (BNR) Data Dashboard."),
+                               " This guide explains each module and how to use them effectively.")
+                      )
+                    ),
+                    fluidRow(
+                      # Incidence
+                      box(
+                        title = tagList(icon("chart-bar"), " Incidence"),
+                        status = "primary", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " The number of new cancer cases diagnosed in Barbados over time."),
+                        tags$ul(
+                          tags$li(tags$strong("Frequency:"), " View raw counts of new cases by year and cancer site. Use the dropdowns to filter by year or specific site."),
+                          tags$li(tags$strong("Crude Incidence Rate:"), " The rate of new cases per 100,000 population without age adjustment."),
+                          tags$li(tags$strong("ASIR (Age-Standardised Incidence Rate):"), " Incidence rates adjusted for age using the WHO 2000 standard population, allowing fair comparisons across years and populations."),
+                          tags$li(tags$strong("Cumulative Incidence:"), " The probability (%) of developing cancer between birth and age 74.")
+                        ),
+                        p(tags$em("Tip:"), " Use the ", tags$strong("Select Metric"), " radio buttons at the top to switch between views.")
+                      ),
+                      # Mortality
+                      box(
+                        title = tagList(icon("skull-crossbones"), " Mortality"),
+                        status = "danger", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " Cancer-related deaths recorded in Barbados from 2008 to 2024."),
+                        tags$ul(
+                          tags$li(tags$strong("Frequency:"), " Counts of cancer deaths by year, sex, and site."),
+                          tags$li(tags$strong("Crude Mortality Rate:"), " Deaths per 100,000 population without age adjustment."),
+                          tags$li(tags$strong("ASMR (Age-Standardised Mortality Rate):"), " Mortality rates adjusted for age using the WHO standard, enabling trend comparisons over time."),
+                          tags$li(tags$strong("Geographic View:"), " An interactive map showing mortality rates by parish.")
+                        ),
+                        p(tags$em("Tip:"), " Filter by sex and cancer site using the controls provided in each sub-section.")
+                      )
+                    ),
+                    fluidRow(
+                      # Survival
+                      box(
+                        title = tagList(icon("heartbeat"), " Survival"),
+                        status = "success", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " The probability that a patient survives after a cancer diagnosis, over time."),
+                        tags$ul(
+                          tags$li(tags$strong("Kaplan-Meier Curves:"), " Visual survival curves showing the proportion of patients alive at each point in time after diagnosis."),
+                          tags$li(tags$strong("1-, 3-, and 5-Year Survival Gauges:"), " At-a-glance survival probability indicators at key time points."),
+                          tags$li(tags$strong("Age Band Analysis:"), " Survival broken down by age group to identify high-risk populations.")
+                        ),
+                        p(tags$em("Tip:"), " Select a cancer site and sex using the filters to explore survival for specific subgroups.")
+                      ),
+                      # Prevalence
+                      box(
+                        title = tagList(icon("user-check"), " Prevalence"),
+                        status = "warning", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " The number and proportion of people living with cancer (survivors) as of December 31, 2022."),
+                        tags$ul(
+                          tags$li(tags$strong("Survivors Count:"), " Total number of cancer survivors alive at the prevalence date."),
+                          tags$li(tags$strong("Prevalence Rate (%):"), " The percentage of the population that are cancer survivors."),
+                          tags$li(tags$strong("Age & Sex Breakdown:"), " A chart showing the distribution of survivors by 5-year age groups and sex."),
+                          tags$li(tags$strong("Top Prevalent Cancers:"), " Tables listing the most common cancers among survivors, by sex.")
+                        ),
+                        p(tags$em("Tip:"), " Use the cancer site selector to focus on a specific cancer type.")
+                      )
+                    ),
+                    fluidRow(
+                      # Projection
+                      box(
+                        title = tagList(icon("chart-line"), " Projection"),
+                        status = "info", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " Statistical forecasts of future cancer incidence and mortality trends."),
+                        tags$ul(
+                          tags$li("Projections are generated using historical registry data and population growth estimates."),
+                          tags$li("Useful for planning healthcare resources and public health interventions."),
+                          tags$li("Forecasts are presented with confidence intervals to communicate uncertainty.")
+                        ),
+                        p(tags$em("Tip:"), " Projections are most reliable for common cancer sites with longer data histories.")
+                      ),
+                      # Data Quality
+                      box(
+                        title = tagList(icon("check-circle"), " Data Quality"),
+                        status = "primary", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " Indicators that reflect the completeness and reliability of the registry data."),
+                        tags$ul(
+                          tags$li(tags$strong("MV% (Microscopic Verification):"), " Percentage of cases confirmed by histology, cytology, or laboratory tests. Higher values indicate more reliable diagnoses."),
+                          tags$li(tags$strong("DCO% (Death Certificate Only):"), " Cases identified only from a death certificate, with no prior diagnosis record. Lower values are preferred."),
+                          tags$li(tags$strong("Ill-Defined Sites (%):"), " Cases recorded with vague or unspecified primary sites. Lower values indicate better coding quality.")
+                        ),
+                        p(tags$em("Tip:"), " Use this tab routinely to monitor data quality trends over time and identify areas needing improvement.")
+                      )
+                    ),
+                    fluidRow(
+                      # Reports
+                      box(
+                        title = tagList(icon("file-alt"), " Reports"),
+                        status = "success", solidHeader = TRUE, width = 6,
+                        p(tags$strong("What it shows:"), " Automated report generation for sharing or offline analysis."),
+                        tags$ul(
+                          tags$li("Generate a comprehensive ", tags$strong("PowerPoint report"), " summarising key statistics, charts, and data quality indicators."),
+                          tags$li("The report covers incidence trends, top cancer sites, age-standardised rates, survival curves, and contact information."),
+                          tags$li("Reports are generated dynamically using the latest data loaded into the dashboard.")
+                        ),
+                        p(tags$em("Tip:"), " Click the download button to save the report directly to your device.")
+                      ),
+                      # General Tips
+                      box(
+                        title = tagList(icon("lightbulb"), " General Tips"),
+                        status = "warning", solidHeader = TRUE, width = 6,
+                        tags$ul(
+                          tags$li("All modules require you to be logged in. Contact your system administrator if you need access credentials."),
+                          tags$li("Filters and selectors within each module update charts and tables in real time."),
+                          tags$li("Hover over charts for interactive tooltips showing exact values."),
+                          tags$li("Tables support sorting by clicking on column headers."),
+                          tags$li("For questions about the data or methodology, refer to the ", tags$strong("Contact Us"), " section.")
+                        ),
+                        hr(),
+                        p(style = "font-size: 13px; color: #777;",
+                          icon("info-circle"), " Data covers cancer incidence (2013–2022) and mortality (2008–2024) for Barbados. Population estimates are sourced from the UN World Population Prospects (WPP).")
                       )
                     )
             ),
@@ -1607,7 +1883,7 @@ ui <- dashboardPage(
                     )
             ),
             
-# Data Quality page
+            # Data Quality page
             tabItem(tabName = "data_quality",
                     h2("Data Quality Indicators (All Years)"),
                     tabsetPanel(
@@ -1704,7 +1980,7 @@ ui <- dashboardPage(
                       )
                     )
             ),
-
+            
             tabItem(tabName = "reports",
                     h2("Reports Page"),
                     fluidRow(
@@ -1738,8 +2014,8 @@ ui <- dashboardPage(
                       )
                     )
             ),
-
-             tabItem(tabName = "additional",
+            
+            tabItem(tabName = "additional",
                     h2(tags$strong("Additional Information")),
                     h3(tags$strong("BNR Cancer Registry Online Dashboard Release Notes")),
                     p("The data presented in the BNR Cancer Registry Online Dashboard can be used to examine the current landscape of cancer in Barbados, estimate disease burden, follow trends over time, and make comparisons across different cancer types, demographic groups, and geographic areas."),
@@ -1778,12 +2054,112 @@ ui <- dashboardPage(
                     h4(tags$strong("Data Quality")),
                     p("In order to share data and make it comparable to other countries and year-to-year, the BNR must maintain quality. We engage several tools for standardising and formatting variables, checking for accuracy, duplicates and missing data as well as performing preliminary analysis. Data Management and Analysis were performed using the International Association for Research in Cancer software: IARCcrgTools version 2.12 (by J. Ferlay, Section of Cancer Surveillance, International Agency for Research on Cancer, Lyon, France), Stata version 17.1 (StataCorp., College Station, TX, USA), CanReg5 database version 5.43 (International Agency for Research in Cancer, Lyon, France), Research electronic data capture (REDCap), Version 12.3.3, the SEER Hematopoietic database (Surveillance, Epidemiology and End Results (SEER) Program [www.seer.cancer.gov] Hematopoietic and Lymphoid Database, Version 2.1 data released 05/23/2012. National Cancer Institute, DCCPS, Surveillance Research Program).")
             ),
-        # --- OTHER TABS ---
-        tabItem(tabName = "projection",
-        h2("Projection Page"),
-        p(tags$strong("COMING SOON."))
-        ),       
-             tabItem(tabName = "contact",
+            # --- OTHER TABS ---
+            tabItem(tabName = "projection",
+                    
+                    # --- Page header ---
+                    fluidRow(
+                      column(12,
+                             h2(icon("chart-line"), " Cancer Incidence Projections",
+                                style = "color:#253494; font-weight:bold; margin-bottom:6px;"),
+                             p(style = "font-size:15px; color:#555;",
+                               "Five-year projections (2023–2027) of cancer incidence for all cancers combined and the top 5 most frequent cancer sites in Barbados, based on registry data from 2013–2022.")
+                      )
+                    ),
+                    
+                    hr(),
+                    
+                    # --- All Cancers projection ---
+                    fluidRow(
+                      box(
+                        title = tagList(icon("chart-area"), " All Cancers — Projected Incidence (2023–2027)"),
+                        status = "primary", solidHeader = TRUE, width = 12,
+                        plotlyOutput("proj_all_cancers", height = 380)
+                      )
+                    ),
+                    
+                    # --- Top 5 individual site projections ---
+                    fluidRow(
+                      box(
+                        title = tagList(icon("chart-bar"), " Top 5 Cancer Sites — Projected Incidence (2023–2027)"),
+                        status = "info", solidHeader = TRUE, width = 12,
+                        plotlyOutput("proj_top5_sites", height = 420)
+                      )
+                    ),
+                    
+                    # --- Projection summary table ---
+                    fluidRow(
+                      box(
+                        title = tagList(icon("table"), " Projection Summary Table"),
+                        status = "success", solidHeader = TRUE, width = 12,
+                        p(style = "font-size:13px; color:#555; margin-bottom:10px;",
+                          "Projected annual case counts with 95% prediction intervals for each cancer site."),
+                        DT::dataTableOutput("proj_summary_table")
+                      )
+                    ),
+                    
+                    hr(),
+                    
+                    # --- Methods section ---
+                    fluidRow(
+                      column(12,
+                             h3(icon("flask"), " Methods",
+                                style = "color:#253494; font-weight:bold; margin-bottom:14px;"),
+                             div(style = "background:#f8f9fa; border-left:5px solid #253494; border-radius:6px; padding:20px 24px;",
+                                 
+                                 h4("Data Source", style = "margin-top:0; color:#253494;"),
+                                 p("Projections are derived from cancer incidence data recorded by the Barbados National Cancer Registry (BNR) covering the period ",
+                                   tags$strong("2013 to 2022"), ". Cases classified as 'Other and unspecified (O&U)' are excluded from all analyses. ",
+                                   "The five cancer sites with the highest total case counts over the observation period are selected as the top 5 sites."),
+                                 
+                                 h4("Statistical Model", style = "color:#253494;"),
+                                 p("A ", tags$strong("Negative Binomial regression model"), " is fitted to the annual case counts for each cancer group. ",
+                                   "Negative Binomial regression is preferred over standard Poisson regression when overdispersion is present — ",
+                                   "that is, when the observed variance in annual counts exceeds the mean. This is a common feature of small-registry cancer data, ",
+                                   "where year-to-year variation reflects both underlying trends and random fluctuation."),
+                                 p("The model takes the form:"),
+                                 tags$blockquote(
+                                   style = "font-family:monospace; background:#fff; border:1px solid #ddd; padding:10px 16px; border-radius:4px;",
+                                   "Cases(t) ~ NegBin(μ(t), θ)",
+                                   br(),
+                                   "log(μ(t)) = β₀ + β₁ × Year"
+                                 ),
+                                 p("where ", tags$em("μ(t)"), " is the expected number of cases in year ", tags$em("t"),
+                                   ", ", tags$em("θ"), " is the dispersion parameter, and ",
+                                   tags$em("β₁"), " is the estimated annual trend. ",
+                                   "If model fitting fails for a given site (e.g., due to sparse data), a fallback ",
+                                   tags$strong("linear regression"), " on raw counts is applied."),
+                                 
+                                 h4("Projection Horizon", style = "color:#253494;"),
+                                 p("Projections are generated for the ", tags$strong("five-year period 2023–2027"),
+                                   " by extrapolating the fitted trend beyond the observation window. ",
+                                   "The last observed year in the registry data is 2022."),
+                                 
+                                 h4("Uncertainty Quantification", style = "color:#253494;"),
+                                 p("Each projected point estimate is accompanied by a ",
+                                   tags$strong("95% prediction interval (PI)"), " derived from the standard error of the linear predictor on the log scale, ",
+                                   "back-transformed to the count scale. Prediction intervals account for both parameter uncertainty and ",
+                                   "the inherent variability of future observations, and should be interpreted as the range within which the ",
+                                   "true number of cases is expected to fall in 95% of hypothetical future realisations of the same process."),
+                                 
+                                 h4("Limitations", style = "color:#253494;"),
+                                 tags$ul(
+                                   tags$li("Projections assume that historical trends observed from 2013–2022 continue linearly into the future. Structural breaks — such as changes in screening policy, population demographics, or registry completeness — are not modelled."),
+                                   tags$li("The relatively short observation window (10 years) and small annual case counts for some sites mean that projection uncertainty is substantial, particularly for rarer cancers."),
+                                   tags$li("Population growth and ageing are not explicitly incorporated; projections reflect trend extrapolation on crude counts rather than age-standardised rates."),
+                                   tags$li("These projections are intended for planning and surveillance purposes and should not be used as clinical or policy mandates without supplementary analysis.")
+                                 ),
+                                 
+                                 h4("Software", style = "color:#253494;"),
+                                 p("All analyses are performed in ", tags$strong("R"), " using the ",
+                                   tags$code("MASS"), " package (", tags$code("glm.nb"), " function) for Negative Binomial regression, ",
+                                   "and the ", tags$code("plotly"), " package for interactive visualisations.")
+                             )
+                      )
+                    )
+                    
+            ),       
+            tabItem(tabName = "contact",
                     h2(tags$strong("Contact Us")),
                     p("Contact information for inquiries."),
                     p(" "),
@@ -1815,16 +2191,21 @@ ui <- dashboardPage(
                              img(src = "uwi_logo.png", class = "collaborator-logo"),
                              p(class = "collaborator-text", "The University of the West Indies, Cave Hill Campus")
                       ),
-          ) # End of tabItems
-      ) # End of dashboard_content div
-    ) # End of shinyjs::hidden
-  ) # End of dashboardBody
-) # End of dashboardPage
-)
+                    ) # End of tabItems
+            ) # End of dashboard_content div
+          ) # End of shinyjs::hidden
+      ) # End of dashboardBody
+    ) # End of dashboardPage
+  )
 )
 
 
 server <- function(input, output, session) {
+  
+  # --- Home landing page: navigate to module on card click ---
+  observeEvent(input$home_nav, {
+    shinydashboard::updateTabItems(session, "tabs", selected = input$home_nav)
+  })
   
   # Authentication
   credentials <- shinyauthr::loginServer(
@@ -2625,7 +3006,7 @@ server <- function(input, output, session) {
     } else {
       pop_df <- pop_data %>%
         filter(sex == tolower(sex_group)) %>%
-        select(year, age_group = age5, pop = pop_wpp)
+        dplyr::select(year, age_group = age5, pop = pop_wpp)
     }
     
     full_df <- full_df %>%
@@ -2676,7 +3057,7 @@ server <- function(input, output, session) {
         pop = coalesce(pop, 0),
         crude_mort_rate = ifelse(pop > 0, counts / pop * 100000, 0)
       ) %>%
-      select(year, crude_mort_rate)
+      dplyr::select(year, crude_mort_rate)
     
     crude_df
   }
@@ -3395,7 +3776,7 @@ server <- function(input, output, session) {
     ")
   })
   
-# Reports page
+  # Reports page
   reports_data <- reactive({
     req(credentials()$user_auth)
     data.frame(
@@ -3554,7 +3935,7 @@ server <- function(input, output, session) {
     })
     df_nested %>%
       filter(!is.na(surv5)) %>%
-      select(siteiarc, surv5, cases) %>%
+      dplyr::select(siteiarc, surv5, cases) %>%
       arrange(desc(surv5)) %>%
       head(10) %>%
       rename(`Cancer Site` = siteiarc, `5-Year Survival (%)` = surv5, Cases = cases) %>%
@@ -3581,7 +3962,7 @@ server <- function(input, output, session) {
     })
     df_nested %>%
       filter(!is.na(surv5)) %>%
-      select(siteiarc, surv5, cases) %>%
+      dplyr::select(siteiarc, surv5, cases) %>%
       arrange(desc(surv5)) %>%
       head(10) %>%
       rename(`Cancer Site` = siteiarc, `5-Year Survival (%)` = surv5, Cases = cases) %>%
@@ -3608,7 +3989,7 @@ server <- function(input, output, session) {
     })
     df_nested %>%
       filter(!is.na(surv5)) %>%
-      select(siteiarc, surv5, cases) %>%
+      dplyr::select(siteiarc, surv5, cases) %>%
       arrange(desc(surv5)) %>%
       head(10) %>%
       rename(`Cancer Site` = siteiarc, `5-Year Survival (%)` = surv5, Cases = cases) %>%
@@ -3682,7 +4063,7 @@ server <- function(input, output, session) {
       }))
     df_nested %>%
       filter(!is.na(surv_prob)) %>%
-      select(age_band, surv_prob)
+      dplyr::select(age_band, surv_prob)
   }
   
   output$surv_1yr_age <- renderPlot({
@@ -3965,6 +4346,190 @@ server <- function(input, output, session) {
     req(credentials()$user_auth)
     get_top_prevalent_cancers(data, "Male")
   }, options = list(pageLength = 10, searching = FALSE))
+  
+  # ---------------------------------------------------------------------------
+  # PROJECTION outputs
+  # ---------------------------------------------------------------------------
+  
+  # Helper: fit Negative Binomial (with linear fallback) and return a
+  # data frame of observed + projected counts with 95% prediction intervals.
+  project_site <- function(df, site_label, proj_years = 2023:2027) {
+    # Summarise annual counts
+    counts_df <- df %>%
+      group_by(year = dxyr) %>%
+      summarise(cases = n(), .groups = "drop") %>%
+      arrange(year)
+    
+    if (nrow(counts_df) < 3) return(NULL)
+    
+    fit_df  <- data.frame(year = counts_df$year, cases = counts_df$cases)
+    new_df  <- data.frame(year = proj_years)
+    all_yrs <- data.frame(year = c(counts_df$year, proj_years))
+    
+    pred <- tryCatch({
+      mod <- MASS::glm.nb(cases ~ year, data = fit_df,
+                          control = glm.control(maxit = 200))
+      p   <- predict(mod, newdata = all_yrs, type = "link", se.fit = TRUE)
+      list(
+        fit  = exp(p$fit),
+        lo   = exp(p$fit - 1.96 * p$se.fit),
+        hi   = exp(p$fit + 1.96 * p$se.fit)
+      )
+    }, error = function(e) {
+      mod <- lm(cases ~ year, data = fit_df)
+      p   <- predict(mod, newdata = all_yrs, interval = "prediction", level = 0.95)
+      list(
+        fit = pmax(p[, "fit"], 0),
+        lo  = pmax(p[, "lwr"], 0),
+        hi  = pmax(p[, "upr"], 0)
+      )
+    })
+    
+    data.frame(
+      site   = site_label,
+      year   = all_yrs$year,
+      cases  = c(counts_df$cases, rep(NA, length(proj_years))),
+      fit    = pred$fit,
+      lo     = pred$lo,
+      hi     = pred$hi,
+      period = c(rep("Observed", nrow(counts_df)), rep("Projected", length(proj_years)))
+    )
+  }
+  
+  # Reactive: compute projections for all cancers + top 5
+  proj_data <- reactive({
+    req(credentials()$user_auth)
+    
+    obs_data <- data %>% filter(siteiarc != "Other and unspecified (O&U)")
+    
+    # All cancers
+    all_proj <- project_site(obs_data, "All Cancers")
+    
+    # Top 5 sites
+    top5 <- obs_data %>%
+      count(siteiarc) %>%
+      arrange(desc(n)) %>%
+      head(5) %>%
+      pull(siteiarc)
+    
+    site_projs <- map_dfr(top5, function(s) {
+      project_site(obs_data %>% filter(siteiarc == s), s)
+    })
+    
+    list(all = all_proj, top5 = site_projs, top5_names = top5)
+  })
+  
+  # --- Plot: All Cancers ---
+  output$proj_all_cancers <- renderPlotly({
+    req(credentials()$user_auth)
+    d <- proj_data()$all
+    if (is.null(d)) return(plotly_empty())
+    
+    obs  <- d %>% filter(period == "Observed")
+    proj <- d %>% filter(period == "Projected")
+    full <- d  # fitted line spans all years
+    
+    plot_ly() %>%
+      # 95% PI ribbon (projected only)
+      add_ribbons(data = proj, x = ~year, ymin = ~lo, ymax = ~hi,
+                  fillcolor = "rgba(37,52,148,0.15)", line = list(color = "transparent"),
+                  name = "95% Prediction Interval", showlegend = TRUE) %>%
+      # Fitted trend line (full span)
+      add_lines(data = full, x = ~year, y = ~fit,
+                line = list(color = "#253494", dash = "dot", width = 2),
+                name = "Fitted trend") %>%
+      # Observed points
+      add_markers(data = obs, x = ~year, y = ~cases,
+                  marker = list(color = "#253494", size = 8),
+                  name = "Observed") %>%
+      # Projected points
+      add_markers(data = proj, x = ~year, y = ~fit,
+                  marker = list(color = "#e74c3c", size = 8, symbol = "diamond"),
+                  name = "Projected") %>%
+      layout(
+        xaxis = list(title = "Year", tickformat = "d",
+                     tickvals = as.list(d$year)),
+        yaxis = list(title = "Number of Cases"),
+        shapes = list(list(
+          type = "line", x0 = 2022.5, x1 = 2022.5,
+          y0 = 0, y1 = 1, yref = "paper",
+          line = list(color = "grey", dash = "dash", width = 1.5)
+        )),
+        legend = list(orientation = "h", x = 0, y = -0.2),
+        hovermode = "x unified"
+      )
+  })
+  
+  # --- Plot: Top 5 Sites ---
+  output$proj_top5_sites <- renderPlotly({
+    req(credentials()$user_auth)
+    d <- proj_data()$top5
+    if (is.null(d) || nrow(d) == 0) return(plotly_empty())
+    
+    palette <- c("#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd")
+    sites   <- unique(d$site)
+    
+    p <- plot_ly()
+    for (i in seq_along(sites)) {
+      s     <- sites[i]
+      col   <- palette[i]
+      obs   <- d %>% filter(site == s, period == "Observed")
+      proj  <- d %>% filter(site == s, period == "Projected")
+      full  <- d %>% filter(site == s)
+      
+      p <- p %>%
+        add_ribbons(data = proj, x = ~year, ymin = ~lo, ymax = ~hi,
+                    fillcolor = paste0(substr(col, 1, 7), "22"),
+                    line = list(color = "transparent"),
+                    showlegend = FALSE, legendgroup = s) %>%
+        add_lines(data = full, x = ~year, y = ~fit,
+                  line = list(color = col, dash = "dot", width = 1.8),
+                  showlegend = FALSE, legendgroup = s) %>%
+        add_markers(data = obs, x = ~year, y = ~cases,
+                    marker = list(color = col, size = 7),
+                    name = s, legendgroup = s) %>%
+        add_markers(data = proj, x = ~year, y = ~fit,
+                    marker = list(color = col, size = 7, symbol = "diamond"),
+                    showlegend = FALSE, legendgroup = s)
+    }
+    
+    p %>% layout(
+      xaxis = list(title = "Year", tickformat = "d"),
+      yaxis = list(title = "Number of Cases"),
+      shapes = list(list(
+        type = "line", x0 = 2022.5, x1 = 2022.5,
+        y0 = 0, y1 = 1, yref = "paper",
+        line = list(color = "grey", dash = "dash", width = 1.5)
+      )),
+      legend = list(orientation = "h", x = 0, y = -0.2),
+      hovermode = "x unified"
+    )
+  })
+  
+  # --- Summary table ---
+  output$proj_summary_table <- DT::renderDataTable({
+    req(credentials()$user_auth)
+    d_all  <- proj_data()$all
+    d_top5 <- proj_data()$top5
+    
+    combined <- bind_rows(d_all, d_top5) %>%
+      filter(period == "Projected") %>%
+      mutate(
+        `Projected Cases` = round(fit),
+        `95% PI Lower`    = round(lo),
+        `95% PI Upper`    = round(hi)
+      ) %>%
+      dplyr::select(`Cancer Site` = site, Year = year,
+                    `Projected Cases`, `95% PI Lower`, `95% PI Upper`)
+    
+    DT::datatable(combined,
+                  options = list(pageLength = 15, searching = FALSE, dom = "tip"),
+                  rownames = FALSE
+    ) %>%
+      DT::formatStyle("Cancer Site",
+                      fontWeight = "bold"
+      )
+  })
   
 }
 
