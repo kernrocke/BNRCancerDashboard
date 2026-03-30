@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIDS Cancer Registry Dashboard Framework</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ocean:       #0a3d62;
+    --coral:       #c0392b;
+    --teal:        #0e7f7f;
+    --sand:        #f5e6c8;
+    --white:       #ffffff;
+    --slate:       #1e2d40;
+    --mist:        #eaf2f8;
+    --accent:      #e67e22;
+    --green:       #1a7a4a;
+    --purple:      #6c3483;
+    --ink:         #1c2b3a;
+    --border:      #d6e4f0;
+    --card-shadow: 0 4px 24px rgba(10,61,98,0.10);
+    --radius:      14px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #f0f4f8;
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  /* ── HERO HEADER ── */
+  .hero {
+    background: linear-gradient(145deg, var(--ocean) 0%, #0e4d78 55%, var(--teal) 100%);
+    color: #fff;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='20'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .hero-inner {
+    position: relative;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 48px 40px 36px;
+    display: flex;
+    align-items: flex-start;
+    gap: 32px;
+  }
+  .hero-badge {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 50px;
+    padding: 6px 18px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 14px;
+    color: #a8d8ea;
+  }
+  .hero h1 {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 2.6rem;
+    line-height: 1.18;
+    font-weight: 400;
+    margin-bottom: 10px;
+    max-width: 640px;
+  }
+  .hero h1 em { font-style: italic; color: #a8d8ea; }
+  .hero-sub {
+    font-size: 1rem;
+    opacity: 0.85;
+    max-width: 580px;
+    line-height: 1.6;
+    font-weight: 300;
+    margin-bottom: 24px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+  .hero-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    opacity: 0.78;
+  }
+  .hero-meta-item svg { width: 14px; height: 14px; }
+  .hero-right {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .sids-pill {
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.8rem;
+    text-align: right;
+    line-height: 1.5;
+  }
+  .sids-pill strong { display: block; font-size: 0.95rem; margin-bottom: 3px; }
+
+  /* ── NAV TABS ── */
+  .nav-tabs-wrap {
+    background: var(--ocean);
+    border-bottom: 3px solid var(--teal);
+  }
+  .nav-tabs {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.65);
+    padding: 14px 22px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -3px;
+    transition: color 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tab-btn:hover { color: #fff; }
+  .tab-btn.active { color: #fff; border-bottom-color: #a8d8ea; }
+  .tab-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.5;
+  }
+  .tab-btn.active .tab-dot { opacity: 1; background: #a8d8ea; }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 32px 40px 60px;
+  }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+  }
+  .section-title {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 400;
+    color: var(--ocean);
+  }
+  .section-sub { font-size: 0.85rem; color: #7a8fa6; margin-top: 4px; }
+  .badge-tag {
+    background: var(--mist);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ocean);
+    letter-spacing: 0.5px;
+  }
+
+  /* ── GRID ── */
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .col-span-2 { grid-column: span 2; }
+  .col-span-3 { grid-column: span 3; }
+  .col-span-full { grid-column: 1 / -1; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    transition: box-shadow 0.2s;
+  }
+  .card:hover { box-shadow: 0 8px 32px rgba(10,61,98,0.15); }
+  .card-head {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+  }
+  .card-head-left { display: flex; align-items: center; gap: 10px; }
+  .card-icon {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--slate);
+  }
+  .card-desc { font-size: 0.78rem; color: #9aafbe; margin-top: 2px; }
+  .card-body { padding: 20px; }
+  .card-body.tight { padding: 14px 20px; }
+
+  /* ── KPI BOXES ── */
+  .kpi {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+  }
+  .kpi.blue::after  { background: var(--ocean); }
+  .kpi.coral::after { background: var(--coral); }
+  .kpi.teal::after  { background: var(--teal); }
+  .kpi.amber::after { background: var(--accent); }
+  .kpi.green::after { background: var(--green); }
+  .kpi.purple::after { background: var(--purple); }
+  .kpi-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #9aafbe; }
+  .kpi-value { font-family: 'DM Serif Display', Georgia, serif; font-size: 2.1rem; color: var(--ink); line-height: 1; }
+  .kpi-sub { font-size: 0.78rem; color: #7a8fa6; }
+  .kpi-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    width: fit-content;
+  }
+  .kpi-trend.up { background: #eafaf1; color: var(--green); }
+  .kpi-trend.dn { background: #fdf2f8; color: var(--coral); }
+  .kpi-trend.neutral { background: #f0f4f8; color: #7a8fa6; }
+
+  /* ── CHART PLACEHOLDERS ── */
+  .chart-area {
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: #b0c4d4;
+    font-size: 0.82rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .chart-icon { font-size: 2.5rem; margin-bottom: 4px; }
+
+  /* Bar chart simulation */
+  .sim-bars {
+    width: 100%; height: 160px;
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 10px 0 0;
+  }
+  .bar {
+    flex: 1;
+    border-radius: 4px 4px 0 0;
+    position: relative;
+    transition: opacity 0.2s;
+  }
+  .bar:hover { opacity: 0.8; }
+  .bar-label {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    color: #9aafbe;
+    white-space: nowrap;
+  }
+  .bars-wrap { width: 100%; padding-bottom: 22px; }
+
+  /* Line chart simulation */
+  .sim-line {
+    width: 100%;
+    height: 140px;
+  }
+
+  /* Map placeholder */
+  .map-placeholder {
+    background: linear-gradient(135deg, #e8f4fd 0%, #d0e8f0 100%);
+    border-radius: 10px;
+    height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--teal);
+    border: 1px dashed #a8cfe0;
+  }
+  .map-icon { font-size: 2.8rem; }
+  .map-label { font-size: 0.82rem; font-weight: 600; color: var(--teal); }
+  .map-sub { font-size: 0.74rem; color: #7ab8cc; }
+
+  /* ── TABLE STYLES ── */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .data-table th {
+    background: var(--mist);
+    color: var(--ocean);
+    font-weight: 600;
+    padding: 9px 12px;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .data-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #eef2f7;
+    color: var(--ink);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: #f8fbff; }
+  .rank-badge {
+    background: var(--ocean);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.72rem;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bar-inline {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--teal), var(--ocean));
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 8px;
+  }
+
+  /* ── QUALITY INDICATORS ── */
+  .quality-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .quality-item {
+    background: var(--mist);
+    border-radius: 10px;
+    padding: 16px;
+    border-left: 4px solid;
+    position: relative;
+  }
+  .quality-item.good  { border-color: var(--green); }
+  .quality-item.warn  { border-color: var(--accent); }
+  .quality-item.bad   { border-color: var(--coral); }
+  .quality-label { font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #7a8fa6; margin-bottom: 6px; }
+  .quality-value { font-family: 'DM Serif Display', Georgia, serif; font-size: 1.8rem; color: var(--ink); }
+  .quality-bench { font-size: 0.74rem; margin-top: 4px; }
+  .quality-bench.good  { color: var(--green); }
+  .quality-bench.warn  { color: var(--accent); }
+  .quality-bench.bad   { color: var(--coral); }
+  .quality-icon { font-size: 1.4rem; position: absolute; right: 14px; top: 14px; }
+
+  /* ── MODULE CARDS (Landing) ── */
+  .modules-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+  }
+  .module-card {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 26px 20px 22px;
+    text-align: center;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    box-shadow: var(--card-shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border-top: 5px solid;
+    position: relative;
+    overflow: hidden;
+  }
+  .module-card:hover { transform: translateY(-5px); box-shadow: 0 12px 36px rgba(10,61,98,0.16); }
+  .module-card.m-blue   { border-top-color: var(--ocean); }
+  .module-card.m-coral  { border-top-color: var(--coral); }
+  .module-card.m-teal   { border-top-color: var(--teal); }
+  .module-card.m-amber  { border-top-color: var(--accent); }
+  .module-card.m-green  { border-top-color: var(--green); }
+  .module-card.m-purple { border-top-color: var(--purple); }
+  .module-card.m-slate  { border-top-color: var(--slate); }
+  .module-card.m-sand   { border-top-color: #b8860b; }
+  .module-emoji { font-size: 2.2rem; margin-bottom: 10px; }
+  .module-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .module-desc { font-size: 0.78rem; color: #7a8fa6; line-height: 1.5; }
+  .module-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 12px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--ocean);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  /* ── SURVIVAL GAUGES ── */
+  .gauge-row { display: flex; gap: 16px; }
+  .gauge-item { flex: 1; text-align: center; }
+  .gauge-circle {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    color: #fff;
+    position: relative;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .gauge-yr { font-size: 0.74rem; font-weight: 600; color: #7a8fa6; }
+  .gauge-label { font-size: 0.8rem; color: var(--ink); font-weight: 500; margin-top: 4px; }
+
+  /* ── PROJECTION PERIOD CHIPS ── */
+  .period-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .period-chip {
+    background: var(--mist);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ocean);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .period-chip:hover, .period-chip.active {
+    background: var(--ocean);
+    color: #fff;
+    border-color: var(--ocean);
+  }
+
+  /* ── SIDS CONTEXT BOX ── */
+  .sids-context {
+    background: linear-gradient(135deg, #e8f6f3 0%, #d5eef9 100%);
+    border: 1px solid #a8d8ea;
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+  }
+  .sids-context-title {
+    font-weight: 700;
+    color: var(--teal);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sids-context-body { font-size: 0.82rem; color: var(--slate); line-height: 1.6; }
+  .sids-context-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .sids-context-chip {
+    background: #fff;
+    border: 1px solid #a8d8ea;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--teal);
+  }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  .filter-label { font-size: 0.78rem; font-weight: 600; color: #9aafbe; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+  .filter-select {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    color: var(--ink);
+    background: #f8fbff;
+    cursor: pointer;
+    outline: none;
+  }
+  .filter-select:focus { border-color: var(--teal); }
+  .filter-btn {
+    background: var(--ocean);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: auto;
+    transition: background 0.15s;
+  }
+  .filter-btn:hover { background: var(--teal); }
+
+  /* ── COMPARISON TABLE (multi-island) ── */
+  .comparison-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .island-flag {
+    width: 24px; height: 16px;
+    border-radius: 2px;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: var(--ocean);
+    color: rgba(255,255,255,0.7);
+    font-size: 0.78rem;
+    padding: 20px 40px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .footer strong { color: #fff; }
+
+  /* ── RESPONSIVENESS ── */
+  @media (max-width: 900px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(2, 1fr); }
+    .modules-grid { grid-template-columns: repeat(2, 1fr); }
+    .hero h1 { font-size: 1.8rem; }
+    .quality-grid { grid-template-columns: 1fr; }
+    .main { padding: 20px; }
+    .hero-inner { flex-direction: column; padding: 28px 20px; }
+    .hero-right { align-items: flex-start; margin-left: 0; }
+  }
+  @media (max-width: 600px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .modules-grid { grid-template-columns: 1fr 1fr; }
+    .col-span-2, .col-span-3 { grid-column: span 1; }
+    .gauge-row { flex-wrap: wrap; }
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .section.active > * {
+    animation: fadeInUp 0.35s ease both;
+  }
+  .section.active > *:nth-child(2) { animation-delay: 0.04s; }
+  .section.active > *:nth-child(3) { animation-delay: 0.08s; }
+  .section.active > *:nth-child(4) { animation-delay: 0.12s; }
+  .section.active > *:nth-child(5) { animation-delay: 0.16s; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HERO ═══════════ -->
+<header class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="hero-badge">🏥 Cancer Registry Framework</div>
+      <h1>Small Island Developing States<br><em>Cancer Surveillance Dashboard</em></h1>
+      <p class="hero-sub">A replicable, open-source dashboard framework for population-based cancer registries in SIDS — built to adapt to any island's data, codes, and reporting standards.</p>
+      <div class="hero-meta">
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          8 analytical modules
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          WHO 2000 Age-standardisation
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+          Sub-national geographic mapping
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Kaplan-Meier survival analysis
+        </span>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="sids-pill">
+        <strong>Designed for SIDS</strong>
+        Caribbean · Pacific · Indian Ocean<br>
+        Atlantic & Mediterranean islands
+      </div>
+      <div class="sids-pill">
+        <strong>Reference: BNR Barbados</strong>
+        Data coverage: 2013–2022 (incidence)<br>
+        2008–2024 (mortality)
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════ NAV TABS ═══════════ -->
+<nav class="nav-tabs-wrap">
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="showTab('landing')"><span class="tab-dot"></span>Framework Overview</button>
+    <button class="tab-btn" onclick="showTab('overview')"><span class="tab-dot"></span>Overview</button>
+    <button class="tab-btn" onclick="showTab('incidence')"><span class="tab-dot"></span>Incidence</button>
+    <button class="tab-btn" onclick="showTab('mortality')"><span class="tab-dot"></span>Mortality</button>
+    <button class="tab-btn" onclick="showTab('survival')"><span class="tab-dot"></span>Survival</button>
+    <button class="tab-btn" onclick="showTab('prevalence')"><span class="tab-dot"></span>Prevalence</button>
+    <button class="tab-btn" onclick="showTab('projections')"><span class="tab-dot"></span>Projections</button>
+    <button class="tab-btn" onclick="showTab('quality')"><span class="tab-dot"></span>Data Quality</button>
+    <button class="tab-btn" onclick="showTab('reports')"><span class="tab-dot"></span>Reports</button>
+  </div>
+</nav>
+
+<!-- ═══════════ MAIN ═══════════ -->
+<main class="main">
+
+  <!-- ── LANDING ── -->
+  <section id="landing" class="section active">
+    <div class="sids-context">
+      <div class="sids-context-title">🌊 SIDS-Specific Design Considerations</div>
+      <div class="sids-context-body">
+        This framework addresses the unique epidemiological challenges of Small Island Developing States: small denominators requiring careful rate-stabilisation, limited registry infrastructure, high out-migration affecting survival follow-up, and elevated proportions of non-communicable diseases. Each module is calibrated for these realities.
+      </div>
+      <div class="sids-context-chips">
+        <span class="sids-context-chip">Small denominators</span>
+        <span class="sids-context-chip">UN WPP population data</span>
+        <span class="sids-context-chip">IARC SEER*Stat compatible</span>
+        <span class="sids-context-chip">WHO age standardisation</span>
+        <span class="sids-context-chip">Multi-island comparison ready</span>
+        <span class="sids-context-chip">Secure login (shinyauthr)</span>
+        <span class="sids-context-chip">PowerPoint export</span>
+        <span class="sids-context-chip">Leaflet parish maps</span>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <div>
+        <div class="section-title">Dashboard Modules</div>
+        <div class="section-sub">Eight analytical modules — click any card to navigate to that module's prototype</div>
+      </div>
+      <span class="badge-tag">8 MODULES</span>
+    </div>
+
+    <div class="modules-grid">
+      <div class="module-card m-blue" onclick="showTab('overview')">
+        <div class="module-emoji">📊</div>
+        <div class="module-name">Overview</div>
+        <div class="module-desc">Key KPIs, case trends, top cancer sites and parish-level geographic distribution.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-teal" onclick="showTab('incidence')">
+        <div class="module-emoji">📈</div>
+        <div class="module-name">Incidence</div>
+        <div class="module-desc">Crude rates, ASIR (WHO 2000), cumulative incidence and age-specific trends by sex and site.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-coral" onclick="showTab('mortality')">
+        <div class="module-emoji">💔</div>
+        <div class="module-name">Mortality</div>
+        <div class="module-desc">Cancer death counts, crude & age-standardised mortality rates, ASMR trends and parish maps.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-green" onclick="showTab('survival')">
+        <div class="module-emoji">❤️</div>
+        <div class="module-name">Survival</div>
+        <div class="module-desc">Kaplan-Meier curves, 1/3/5-year estimates, log-rank tests and age-band survival analysis.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-amber" onclick="showTab('prevalence')">
+        <div class="module-emoji">👥</div>
+        <div class="module-name">Prevalence</div>
+        <div class="module-desc">Point prevalence of cancer survivors, age-sex distribution and top prevalent sites.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-purple" onclick="showTab('projections')">
+        <div class="module-emoji">🔮</div>
+        <div class="module-name">Projections</div>
+        <div class="module-desc">Negative binomial trend models projecting incidence 5 years forward with 95% prediction intervals.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-slate" onclick="showTab('quality')">
+        <div class="module-emoji">✅</div>
+        <div class="module-name">Data Quality</div>
+        <div class="module-desc">MV%, DCO%, ill-defined sites and completeness — benchmarked against IARC standards for SIDS.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+      <div class="module-card m-sand" onclick="showTab('reports')">
+        <div class="module-emoji">📄</div>
+        <div class="module-name">Reports</div>
+        <div class="module-desc">One-click PowerPoint export with all slides: trends, rates, maps and data quality indicators.</div>
+        <span class="module-link">Preview →</span>
+      </div>
+    </div>
+
+    <!-- Architecture diagram -->
+    <div style="margin-top: 32px;">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Technical Architecture</div>
+          <div class="section-sub">R Shiny stack — fully open source and deployable on any server or shinyapps.io</div>
+        </div>
+      </div>
+      <div class="grid grid-3" style="gap:16px;">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-left">
+              <div class="card-icon" style="background:#e8f4fd;">🗄️</div>
+              <div><div class="card-title">Data Layer</div><div class="card-desc">Inputs & wrangling</div></div>
+            </div>
+          </div>
+          <div class="card-body" style="font-size:0.8rem; color:#4a6070; line-height:1.7;">
+            <strong style="color:var(--ocean);">cancer_YYYY_YYYY_bnr.csv</strong> — incidence records (ICD-10, SEER site recode)<br>
+            <strong style="color:var(--ocean);">cancer_death_YYYY_YYYY.csv</strong> — mortality records<br>
+            <strong style="color:var(--ocean);">WPP.xlsx</strong> — UN World Population Prospects, multi-sheet by year<br>
+            <strong style="color:var(--ocean);">parish_population.csv</strong> — sub-national 10-yr age bands<br>
+            <strong style="color:var(--ocean);">Shapefile (.shp)</strong> — administrative boundaries (EPSG:4326)
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-left">
+              <div class="card-icon" style="background:#eafaf1;">⚙️</div>
+              <div><div class="card-title">Analytical Layer</div><div class="card-desc">Core R functions</div></div>
+            </div>
+          </div>
+          <div class="card-body" style="font-size:0.8rem; color:#4a6070; line-height:1.7;">
+            <strong style="color:var(--green);">compute_asir()</strong> — WHO 2000 age-standardised incidence rates<br>
+            <strong style="color:var(--green);">compute_asmr()</strong> — age-standardised mortality rates<br>
+            <strong style="color:var(--green);">compute_cuminc()</strong> — cumulative incidence 0–74 yrs<br>
+            <strong style="color:var(--green);">compute_prevalence()</strong> — point prevalence, survivor status<br>
+            <strong style="color:var(--green);">project_site()</strong> — MASS::glm.nb() negative binomial projection<br>
+            <strong style="color:var(--green);">create_parish_map()</strong> — leaflet choropleth mapping
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-left">
+              <div class="card-icon" style="background:#fdf2f8;">🖥️</div>
+              <div><div class="card-title">Presentation Layer</div><div class="card-desc">UI & output</div></div>
+            </div>
+          </div>
+          <div class="card-body" style="font-size:0.8rem; color:#4a6070; line-height:1.7;">
+            <strong style="color:var(--coral);">shinydashboard</strong> — sidebar navigation, valueBoxes<br>
+            <strong style="color:var(--coral);">shinyauthr + sodium</strong> — bcrypt-hashed authentication<br>
+            <strong style="color:var(--coral);">plotly</strong> — interactive charts with hover & zoom<br>
+            <strong style="color:var(--coral);">leaflet</strong> — YlOrRd choropleth parish maps<br>
+            <strong style="color:var(--coral);">DT</strong> — searchable, paginated data tables<br>
+            <strong style="color:var(--coral);">officer + rvg</strong> — editable PowerPoint export
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── OVERVIEW ── -->
+  <section id="overview" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Overview</div>
+        <div class="section-sub">Key statistics, annual trends and geographic distribution · Incidence 2013–2022 · Mortality 2008–2024</div>
+      </div>
+      <span class="badge-tag">DEMO DATA</span>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:20px;">
+      <div class="kpi blue">
+        <div class="kpi-label">Total Incident Cases</div>
+        <div class="kpi-value">4,218</div>
+        <div class="kpi-sub">2013–2022 · All sites</div>
+        <div class="kpi-trend neutral">10-year period</div>
+      </div>
+      <div class="kpi coral">
+        <div class="kpi-label">Total Cancer Deaths</div>
+        <div class="kpi-value">3,041</div>
+        <div class="kpi-sub">2008–2024 · All sites</div>
+        <div class="kpi-trend dn">↑ 4.2% vs prior period</div>
+      </div>
+      <div class="kpi teal">
+        <div class="kpi-label">Mean Age at Diagnosis</div>
+        <div class="kpi-value">63.4</div>
+        <div class="kpi-sub">years · combined sexes</div>
+        <div class="kpi-trend neutral">Stable</div>
+      </div>
+      <div class="kpi amber">
+        <div class="kpi-label">Mean Age at Death</div>
+        <div class="kpi-value">68.7</div>
+        <div class="kpi-sub">years · combined sexes</div>
+        <div class="kpi-trend neutral">Stable</div>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:20px;">
+      <div class="kpi green">
+        <div class="kpi-label">Paediatric Cases (0–17)</div>
+        <div class="kpi-value">84</div>
+        <div class="kpi-sub">2.0% of all cases</div>
+      </div>
+      <div class="kpi purple">
+        <div class="kpi-label">Elderly Cases (65+)</div>
+        <div class="kpi-value">1,987</div>
+        <div class="kpi-sub">47.1% of all cases</div>
+      </div>
+      <div class="kpi coral">
+        <div class="kpi-label">Paediatric Deaths</div>
+        <div class="kpi-value">31</div>
+        <div class="kpi-sub">1.0% of all deaths</div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">Elderly Deaths (65+)</div>
+        <div class="kpi-value">2,104</div>
+        <div class="kpi-sub">69.2% of all deaths</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#e8f4fd;">📊</div>
+            <div><div class="card-title">Annual Incident Cases (2013–2022)</div><div class="card-desc">All cancer sites combined</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="bars-wrap">
+            <div class="sim-bars">
+              <div class="bar" style="height:62%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2013</span></div>
+              <div class="bar" style="height:68%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2014</span></div>
+              <div class="bar" style="height:72%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2015</span></div>
+              <div class="bar" style="height:75%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2016</span></div>
+              <div class="bar" style="height:80%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2017</span></div>
+              <div class="bar" style="height:78%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2018</span></div>
+              <div class="bar" style="height:85%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2019</span></div>
+              <div class="bar" style="height:88%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2020</span></div>
+              <div class="bar" style="height:82%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2021</span></div>
+              <div class="bar" style="height:90%;background:linear-gradient(to top,#0a3d62,#1a6fc4);"><span class="bar-label">2022</span></div>
+            </div>
+          </div>
+          <div style="font-size:0.74rem;color:#9aafbe;text-align:center;">↳ Plotly bar chart with hover labels · filter by sex</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fdf2f8;">🏆</div>
+            <div><div class="card-title">Top 10 Cancer Sites</div><div class="card-desc">2013–2022 · Both sexes</div></div>
+          </div>
+        </div>
+        <div class="card-body tight">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>Site (IARC)</th><th>Cases</th><th>Share</th></tr></thead>
+            <tbody>
+              <tr><td><span class="rank-badge">1</span></td><td>Prostate</td><td>621</td><td><span class="bar-inline" style="width:62px;"></span> 14.7%</td></tr>
+              <tr><td><span class="rank-badge">2</span></td><td>Breast (female)</td><td>558</td><td><span class="bar-inline" style="width:56px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 13.2%</td></tr>
+              <tr><td><span class="rank-badge">3</span></td><td>Colorectal</td><td>401</td><td><span class="bar-inline" style="width:40px;background:linear-gradient(90deg,#0e7f7f,#1abc9c);"></span> 9.5%</td></tr>
+              <tr><td><span class="rank-badge">4</span></td><td>Cervix uteri</td><td>312</td><td><span class="bar-inline" style="width:31px;background:linear-gradient(90deg,#e67e22,#f39c12);"></span> 7.4%</td></tr>
+              <tr><td><span class="rank-badge">5</span></td><td>Lung</td><td>287</td><td><span class="bar-inline" style="width:29px;background:linear-gradient(90deg,#6c3483,#9b59b6);"></span> 6.8%</td></tr>
+              <tr><td><span class="rank-badge">6</span></td><td>Non-Hodgkin lymphoma</td><td>198</td><td><span class="bar-inline" style="width:20px;background:linear-gradient(90deg,#1a7a4a,#2ecc71);"></span> 4.7%</td></tr>
+              <tr><td><span class="rank-badge">7</span></td><td>Stomach</td><td>176</td><td><span class="bar-inline" style="width:18px;background:linear-gradient(90deg,#1e2d40,#3d5a75);"></span> 4.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-left">
+          <div class="card-icon" style="background:#e8f6f3;">🗺️</div>
+          <div><div class="card-title">Top 5 Cancers by Sub-national Region — Cases Choropleth</div><div class="card-desc">Leaflet interactive map · filter by cancer site</div></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="map-placeholder">
+          <div class="map-icon">🗺️</div>
+          <div class="map-label">Interactive Leaflet Choropleth Map</div>
+          <div class="map-sub">Parish/district-level cancer cases · YlOrRd colour palette · hover labels · CartoDB basemap</div>
+          <div class="map-sub" style="margin-top:4px;">Driven by <code>create_parish_map()</code> with WHO-standardised rates overlaid</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── INCIDENCE ── -->
+  <section id="incidence" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Incidence Module</div>
+        <div class="section-sub">New cancer cases · 4 metrics · WHO age-standardisation</div>
+      </div>
+      <span class="badge-tag">INCIDENCE 2013–2022</span>
+    </div>
+
+    <div class="filter-bar">
+      <span class="filter-label">Metric</span>
+      <select class="filter-select">
+        <option>Frequency (counts)</option>
+        <option>Crude Incidence Rate</option>
+        <option>ASIR (WHO 2000)</option>
+        <option>Cumulative Incidence 0–74</option>
+      </select>
+      <span class="filter-label">Cancer Site</span>
+      <select class="filter-select"><option>All cancers</option><option>Prostate</option><option>Breast (female)</option><option>Colorectal</option><option>Cervix uteri</option><option>Lung</option></select>
+      <span class="filter-label">Sex</span>
+      <select class="filter-select"><option>Both</option><option>Female</option><option>Male</option></select>
+      <button class="filter-btn">Apply</button>
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="kpi blue">
+        <div class="kpi-label">ASIR (Both, 2022)</div>
+        <div class="kpi-value">142.6</div>
+        <div class="kpi-sub">per 100,000 · WHO std</div>
+        <div class="kpi-trend dn">↑ vs 2013 baseline</div>
+      </div>
+      <div class="kpi teal">
+        <div class="kpi-label">ASIR Female (2022)</div>
+        <div class="kpi-value">128.3</div>
+        <div class="kpi-sub">per 100,000</div>
+      </div>
+      <div class="kpi coral">
+        <div class="kpi-label">ASIR Male (2022)</div>
+        <div class="kpi-value">158.9</div>
+        <div class="kpi-sub">per 100,000</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#e8f4fd;">📈</div>
+            <div><div class="card-title">ASIR Trend by Sex (All Cancers)</div><div class="card-desc">WHO 2000 standard population</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg class="sim-line" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#3182bd" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#3182bd" stop-opacity="0.01"/>
+              </linearGradient>
+              <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#dd1c77" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#dd1c77" stop-opacity="0.01"/>
+              </linearGradient>
+            </defs>
+            <!-- Male line -->
+            <polyline fill="none" stroke="#3182bd" stroke-width="2.5" stroke-linejoin="round"
+              points="15,85 50,78 85,72 120,68 155,60 190,64 225,55 260,48 295,52"/>
+            <!-- Female line -->
+            <polyline fill="none" stroke="#dd1c77" stroke-width="2.5" stroke-linejoin="round"
+              points="15,95 50,90 85,86 120,82 155,78 190,80 225,74 260,70 295,68"/>
+            <!-- Dots Male -->
+            <circle cx="15" cy="85" r="3.5" fill="#3182bd"/>
+            <circle cx="155" cy="60" r="3.5" fill="#3182bd"/>
+            <circle cx="295" cy="52" r="3.5" fill="#3182bd"/>
+            <!-- Dots Female -->
+            <circle cx="15" cy="95" r="3.5" fill="#dd1c77"/>
+            <circle cx="155" cy="78" r="3.5" fill="#dd1c77"/>
+            <circle cx="295" cy="68" r="3.5" fill="#dd1c77"/>
+            <!-- Legend -->
+            <line x1="200" y1="12" x2="218" y2="12" stroke="#3182bd" stroke-width="2.5"/>
+            <text x="222" y="16" font-size="9" fill="#3182bd" font-family="DM Sans,sans-serif">Male</text>
+            <line x1="200" y1="24" x2="218" y2="24" stroke="#dd1c77" stroke-width="2.5"/>
+            <text x="222" y="28" font-size="9" fill="#dd1c77" font-family="DM Sans,sans-serif">Female</text>
+            <!-- Axis labels -->
+            <text x="15" y="115" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">2013</text>
+            <text x="275" y="115" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">2022</text>
+            <text x="8" y="50" font-size="7" fill="#9aafbe" font-family="DM Sans,sans-serif" transform="rotate(-90,8,80)">ASIR /100k</text>
+          </svg>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;margin-top:6px;">↳ Plotly interactive · hover for annual values</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#eafaf1;">🎯</div>
+            <div><div class="card-title">ASIR Trends — Top 5 Sites</div><div class="card-desc">Multiline Plotly · select/deselect per legend</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg class="sim-line" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
+            <polyline fill="none" stroke="#1f77b4" stroke-width="2" points="15,40 80,38 155,35 225,30 295,28"/>
+            <polyline fill="none" stroke="#ff7f0e" stroke-width="2" points="15,55 80,52 155,56 225,50 295,48"/>
+            <polyline fill="none" stroke="#2ca02c" stroke-width="2" points="15,70 80,68 155,65 225,62 295,60"/>
+            <polyline fill="none" stroke="#d62728" stroke-width="2" points="15,82 80,80 155,85 225,80 295,78"/>
+            <polyline fill="none" stroke="#9467bd" stroke-width="2" points="15,95 80,92 155,90 225,88 295,85"/>
+            <!-- Mini legend -->
+            <rect x="8" y="5" width="140" height="55" rx="4" fill="white" opacity="0.85"/>
+            <circle cx="16" cy="15" r="4" fill="#1f77b4"/><text x="24" y="18" font-size="8" fill="#333" font-family="DM Sans,sans-serif">Prostate</text>
+            <circle cx="16" cy="26" r="4" fill="#ff7f0e"/><text x="24" y="29" font-size="8" fill="#333" font-family="DM Sans,sans-serif">Breast (F)</text>
+            <circle cx="16" cy="37" r="4" fill="#2ca02c"/><text x="24" y="40" font-size="8" fill="#333" font-family="DM Sans,sans-serif">Colorectal</text>
+            <circle cx="80" cy="15" r="4" fill="#d62728"/><text x="88" y="18" font-size="8" fill="#333" font-family="DM Sans,sans-serif">Cervix</text>
+            <circle cx="80" cy="26" r="4" fill="#9467bd"/><text x="88" y="29" font-size="8" fill="#333" font-family="DM Sans,sans-serif">Lung</text>
+          </svg>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;margin-top:6px;">↳ compute_top5_asr_trends() · colour-coded by site</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-left">
+          <div class="card-icon" style="background:#f0f4f8;">🔢</div>
+          <div><div class="card-title">Incidence Metrics Summary Table</div><div class="card-desc">All sites · by year · both sexes</div></div>
+        </div>
+      </div>
+      <div class="card-body tight">
+        <table class="data-table">
+          <thead><tr><th>Year</th><th>Cases (n)</th><th>Crude Rate</th><th>ASIR /100k</th><th>Cum. Inc. 0–74 (%)</th></tr></thead>
+          <tbody>
+            <tr><td>2018</td><td>412</td><td>143.2</td><td>138.4</td><td>12.1%</td></tr>
+            <tr><td>2019</td><td>438</td><td>151.6</td><td>145.2</td><td>12.8%</td></tr>
+            <tr><td>2020</td><td>395</td><td>136.3</td><td>131.0</td><td>11.4%</td></tr>
+            <tr><td>2021</td><td>421</td><td>145.1</td><td>140.1</td><td>12.3%</td></tr>
+            <tr><td>2022</td><td>456</td><td>157.2</td><td>142.6</td><td>12.7%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MORTALITY ── -->
+  <section id="mortality" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Mortality Module</div>
+        <div class="section-sub">Cancer deaths 2008–2024 · ASMR trends · parish mortality maps</div>
+      </div>
+      <span class="badge-tag">MORTALITY 2008–2024</span>
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="kpi coral">
+        <div class="kpi-label">ASMR Both (2024)</div>
+        <div class="kpi-value">98.4</div>
+        <div class="kpi-sub">per 100,000 · WHO std</div>
+        <div class="kpi-trend dn">↑ 2.1% vs 2020</div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">ASMR Female (2024)</div>
+        <div class="kpi-value">82.7</div>
+        <div class="kpi-sub">per 100,000</div>
+      </div>
+      <div class="kpi purple">
+        <div class="kpi-label">ASMR Male (2024)</div>
+        <div class="kpi-value">116.2</div>
+        <div class="kpi-sub">per 100,000</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fdf2f8;">💔</div>
+            <div><div class="card-title">Annual Deaths by Year</div><div class="card-desc">2008–2024 · dark-red bar chart</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="bars-wrap">
+            <div class="sim-bars">
+              <div class="bar" style="height:55%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:60%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:62%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:65%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:70%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:68%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:75%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:78%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:80%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:72%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:83%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:85%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:88%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:90%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:87%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:92%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+              <div class="bar" style="height:95%;background:linear-gradient(to top,#7b1010,#c0392b);"></div>
+            </div>
+          </div>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;">2008 ——————————————— 2024</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fdf2f8;">🗺️</div>
+            <div><div class="card-title">Age-standardised Mortality by Parish</div><div class="card-desc">Leaflet · YlOrRd choropleth · hover labels</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="map-placeholder" style="height:200px;">
+            <div class="map-icon">🗺️</div>
+            <div class="map-label">Parish Mortality Choropleth</div>
+            <div class="map-sub">compute_parish_asmr() → create_parish_map()</div>
+            <div class="map-sub">Filter by cancer site and sex</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-left">
+          <div class="card-icon" style="background:#fdf2f8;">💀</div>
+          <div><div class="card-title">Top 10 Cancer Mortality Sites</div><div class="card-desc">2008–2024 · All sexes</div></div>
+        </div>
+      </div>
+      <div class="card-body tight">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Cancer Site</th><th>Deaths</th><th>% of All Deaths</th></tr></thead>
+          <tbody>
+            <tr><td><span class="rank-badge" style="background:var(--coral);">1</span></td><td>Prostate</td><td>482</td><td><span class="bar-inline" style="width:48px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 15.8%</td></tr>
+            <tr><td><span class="rank-badge" style="background:var(--coral);">2</span></td><td>Breast (female)</td><td>371</td><td><span class="bar-inline" style="width:37px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 12.2%</td></tr>
+            <tr><td><span class="rank-badge" style="background:var(--coral);">3</span></td><td>Lung</td><td>328</td><td><span class="bar-inline" style="width:33px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 10.8%</td></tr>
+            <tr><td><span class="rank-badge" style="background:var(--coral);">4</span></td><td>Colorectal</td><td>291</td><td><span class="bar-inline" style="width:29px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 9.6%</td></tr>
+            <tr><td><span class="rank-badge" style="background:var(--coral);">5</span></td><td>Cervix uteri</td><td>214</td><td><span class="bar-inline" style="width:21px;background:linear-gradient(90deg,#c0392b,#e74c3c);"></span> 7.0%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SURVIVAL ── -->
+  <section id="survival" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Survival Module</div>
+        <div class="section-sub">Kaplan-Meier analysis · 1/3/5-year estimates · age-band comparison</div>
+      </div>
+      <span class="badge-tag">SURVIVAL ANALYSIS</span>
+    </div>
+
+    <div class="filter-bar">
+      <span class="filter-label">Cancer Site</span>
+      <select class="filter-select"><option>All cancers</option><option>Prostate</option><option>Breast (female)</option><option>Colorectal</option></select>
+      <span class="filter-label">Sex</span>
+      <select class="filter-select"><option>Both</option><option>Female</option><option>Male</option></select>
+      <button class="filter-btn">Apply</button>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#eafaf1;">❤️</div>
+            <div><div class="card-title">Kaplan-Meier Survival Curve</div><div class="card-desc">survival::survfit() · confidence bands · log-rank test</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg class="sim-line" viewBox="0 0 320 140" xmlns="http://www.w3.org/2000/svg">
+            <!-- Female KM curve (step function) -->
+            <polyline fill="none" stroke="#dd1c77" stroke-width="2.5" stroke-linejoin="round"
+              points="10,15 50,15 50,22 90,22 90,30 130,30 130,42 170,42 170,58 210,58 210,78 250,78 250,100 295,100"/>
+            <!-- Male KM curve -->
+            <polyline fill="none" stroke="#3182bd" stroke-width="2.5" stroke-linejoin="round"
+              points="10,15 45,15 45,25 85,25 85,38 125,38 125,55 165,55 165,76 205,76 205,98 250,98 250,115 295,115"/>
+            <!-- CI bands -->
+            <polygon fill="#dd1c77" opacity="0.08"
+              points="10,12 295,96 295,104 10,18"/>
+            <polygon fill="#3182bd" opacity="0.08"
+              points="10,12 295,112 295,118 10,18"/>
+            <!-- Axis -->
+            <line x1="10" y1="130" x2="300" y2="130" stroke="#dde" stroke-width="1"/>
+            <line x1="10" y1="10" x2="10" y2="130" stroke="#dde" stroke-width="1"/>
+            <text x="10" y="138" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">0</text>
+            <text x="280" y="138" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">60 mo</text>
+            <text x="2" y="18" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">1.0</text>
+            <text x="2" y="132" font-size="8" fill="#9aafbe" font-family="DM Sans,sans-serif">0.0</text>
+            <!-- Log-rank p -->
+            <text x="200" y="30" font-size="8" fill="#555" font-family="DM Sans,sans-serif">Log-rank p = 0.043</text>
+            <!-- Legend -->
+            <line x1="200" y1="48" x2="218" y2="48" stroke="#3182bd" stroke-width="2"/><text x="222" y="51" font-size="8" fill="#3182bd" font-family="DM Sans,sans-serif">Male</text>
+            <line x1="200" y1="60" x2="218" y2="60" stroke="#dd1c77" stroke-width="2"/><text x="222" y="63" font-size="8" fill="#dd1c77" font-family="DM Sans,sans-serif">Female</text>
+          </svg>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;margin-top:4px;">↳ Plotly interactive · right-censoring applied</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#eafaf1;">🎯</div>
+            <div><div class="card-title">Survival Probability Gauges</div><div class="card-desc">Key milestones — 1, 3 and 5 years</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="gauge-row">
+            <div class="gauge-item">
+              <div class="gauge-circle" style="background:linear-gradient(135deg,#1a7a4a,#2ecc71);">81%</div>
+              <div class="gauge-yr">1-Year</div>
+              <div class="gauge-label">Survival</div>
+            </div>
+            <div class="gauge-item">
+              <div class="gauge-circle" style="background:linear-gradient(135deg,#0e7f7f,#1abc9c);">62%</div>
+              <div class="gauge-yr">3-Year</div>
+              <div class="gauge-label">Survival</div>
+            </div>
+            <div class="gauge-item">
+              <div class="gauge-circle" style="background:linear-gradient(135deg,#0a3d62,#2980b9);">48%</div>
+              <div class="gauge-yr">5-Year</div>
+              <div class="gauge-label">Survival</div>
+            </div>
+          </div>
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+            <div style="font-size:0.8rem;font-weight:600;color:var(--slate);margin-bottom:10px;">Survival by Age Band</div>
+            <table class="data-table">
+              <thead><tr><th>Age Group</th><th>5-yr Survival</th><th>n at Risk</th></tr></thead>
+              <tbody>
+                <tr><td>0–49</td><td>68.2%</td><td>312</td></tr>
+                <tr><td>50–64</td><td>52.4%</td><td>891</td></tr>
+                <tr><td>65–74</td><td>38.1%</td><td>1,203</td></tr>
+                <tr><td>75+</td><td>21.7%</td><td>748</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PREVALENCE ── -->
+  <section id="prevalence" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Prevalence Module</div>
+        <div class="section-sub">Cancer survivors living as of prevalence date · age-sex distribution · top prevalent sites</div>
+      </div>
+      <span class="badge-tag">PREVALENCE DATE: 31-DEC-2022</span>
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="kpi green">
+        <div class="kpi-label">Total Survivors</div>
+        <div class="kpi-value">2,184</div>
+        <div class="kpi-sub">alive on 31 Dec 2022</div>
+      </div>
+      <div class="kpi amber">
+        <div class="kpi-label">Prevalence Rate</div>
+        <div class="kpi-value">0.75%</div>
+        <div class="kpi-sub">of total population</div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">Population Denominator</div>
+        <div class="kpi-value">290k</div>
+        <div class="kpi-sub">UN WPP 2022 estimate</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fef9e7;">👥</div>
+            <div><div class="card-title">Survivors by 5-Year Age Group & Sex</div><div class="card-desc">ggplot2 grouped bar chart</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="bars-wrap">
+            <div class="sim-bars" style="height:140px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:10%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:8%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">30-39</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:25%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:30%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">40-49</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:55%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:62%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">50-59</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:80%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:75%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">60-69</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:100%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:88%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">70-79</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+                <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:130px;">
+                  <div style="flex:1;height:70%;background:#3182bd;border-radius:2px 2px 0 0;"></div>
+                  <div style="flex:1;height:60%;background:#dd1c77;border-radius:2px 2px 0 0;"></div>
+                </div>
+                <div style="font-size:0.62rem;color:#9aafbe;">80+</div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;justify-content:center;margin-top:8px;">
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;color:#3182bd;"><span style="width:12px;height:12px;background:#3182bd;border-radius:2px;display:inline-block;"></span>Male</span>
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;color:#dd1c77;"><span style="width:12px;height:12px;background:#dd1c77;border-radius:2px;display:inline-block;"></span>Female</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fef9e7;">🏆</div>
+            <div><div class="card-title">Top 10 Prevalent Cancer Sites</div><div class="card-desc">get_top_prevalent_cancers() · by sex</div></div>
+          </div>
+        </div>
+        <div class="card-body tight">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>Cancer Site</th><th>Prevalence (%)</th></tr></thead>
+            <tbody>
+              <tr><td><span class="rank-badge" style="background:var(--green);">1</span></td><td>Prostate</td><td>21.4%</td></tr>
+              <tr><td><span class="rank-badge" style="background:var(--green);">2</span></td><td>Breast (female)</td><td>18.7%</td></tr>
+              <tr><td><span class="rank-badge" style="background:var(--green);">3</span></td><td>Colorectal</td><td>12.1%</td></tr>
+              <tr><td><span class="rank-badge" style="background:var(--green);">4</span></td><td>Cervix uteri</td><td>9.8%</td></tr>
+              <tr><td><span class="rank-badge" style="background:var(--green);">5</span></td><td>Non-Hodgkin lymphoma</td><td>6.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PROJECTIONS ── -->
+  <section id="projections" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Projections Module</div>
+        <div class="section-sub">Negative binomial trend models · 5-year forecast · 95% prediction intervals</div>
+      </div>
+      <span class="badge-tag">FORECAST 2023–2027</span>
+    </div>
+
+    <div class="sids-context" style="background:linear-gradient(135deg,#f9ebff,#ede8fa);border-color:#c39bd3;">
+      <div class="sids-context-title" style="color:var(--purple);">⚠️ SIDS Projection Caveat</div>
+      <div class="sids-context-body">For small island registries with fewer than 50 annual cases per site, negative binomial models may be unstable. The framework automatically falls back to a simple linear model when <code>glm.nb()</code> fails to converge. Prediction intervals should be interpreted cautiously — rate stabilisation using empirical Bayes smoothing is recommended for sparse strata.</div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#f4e6fd;">🔮</div>
+            <div><div class="card-title">All Cancers — Observed + Projected</div><div class="card-desc">glm.nb() with 95% PI · dashed line beyond 2022</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg class="sim-line" viewBox="0 0 320 140" xmlns="http://www.w3.org/2000/svg">
+            <!-- PI ribbon -->
+            <polygon fill="#6c3483" opacity="0.10" points="220,20 295,15 295,65 220,58"/>
+            <!-- Fitted trend line -->
+            <polyline fill="none" stroke="#6c3483" stroke-width="2" stroke-dasharray="6 3"
+              points="10,115 50,105 90,96 130,88 170,80 210,72 250,62 295,52"/>
+            <!-- Observed points -->
+            <circle cx="10" cy="115" r="4.5" fill="#6c3483"/>
+            <circle cx="50"  cy="105" r="4.5" fill="#6c3483"/>
+            <circle cx="90"  cy="96"  r="4.5" fill="#6c3483"/>
+            <circle cx="130" cy="88"  r="4.5" fill="#6c3483"/>
+            <circle cx="170" cy="80"  r="4.5" fill="#6c3483"/>
+            <circle cx="210" cy="72"  r="4.5" fill="#6c3483"/>
+            <!-- Projected points (diamond) -->
+            <polygon points="240,52 247,62 240,72 233,62" fill="#e74c3c"/>
+            <polygon points="265,46 272,56 265,66 258,56" fill="#e74c3c"/>
+            <polygon points="290,40 297,50 290,60 283,50" fill="#e74c3c"/>
+            <!-- Divider line -->
+            <line x1="218" y1="15" x2="218" y2="130" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="175" y="12" font-size="8" fill="#555" font-family="DM Sans,sans-serif">Observed</text>
+            <text x="222" y="12" font-size="8" fill="#e74c3c" font-family="DM Sans,sans-serif">Projected</text>
+          </svg>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;margin-top:4px;">↳ project_site() · MASS::glm.nb() with linear fallback</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#f4e6fd;">📋</div>
+            <div><div class="card-title">Projection Summary Table</div><div class="card-desc">2023–2027 · All sites + top 5</div></div>
+          </div>
+        </div>
+        <div class="card-body tight">
+          <table class="data-table">
+            <thead><tr><th>Site</th><th>Year</th><th>Projected n</th><th>95% PI Lower</th><th>95% PI Upper</th></tr></thead>
+            <tbody>
+              <tr><td>All Cancers</td><td>2023</td><td>471</td><td>428</td><td>514</td></tr>
+              <tr><td>All Cancers</td><td>2025</td><td>502</td><td>446</td><td>558</td></tr>
+              <tr><td>All Cancers</td><td>2027</td><td>534</td><td>462</td><td>606</td></tr>
+              <tr><td>Prostate</td><td>2027</td><td>98</td><td>72</td><td>124</td></tr>
+              <tr><td>Breast (F)</td><td>2027</td><td>87</td><td>64</td><td>110</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DATA QUALITY ── -->
+  <section id="quality" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Data Quality Module</div>
+        <div class="section-sub">Registry completeness and validity indicators — benchmarked against IARC standards for SIDS</div>
+      </div>
+      <span class="badge-tag">IARC BENCHMARKS</span>
+    </div>
+
+    <div class="quality-grid" style="margin-bottom:24px;">
+      <div class="quality-item good">
+        <div class="quality-label">Microscopic Verification (MV%)</div>
+        <div class="quality-value">82.4%</div>
+        <div class="quality-bench good">✅ IARC target: >75% for high-quality registry</div>
+        <div class="quality-icon">🔬</div>
+      </div>
+      <div class="quality-item warn">
+        <div class="quality-label">Death Certificate Only (DCO%)</div>
+        <div class="quality-value">8.1%</div>
+        <div class="quality-bench warn">⚠️ IARC target: <5% · review flagged records</div>
+        <div class="quality-icon">📋</div>
+      </div>
+      <div class="quality-item good">
+        <div class="quality-label">Ill-defined Sites (%)</div>
+        <div class="quality-value">3.2%</div>
+        <div class="quality-bench good">✅ IARC target: <10% · within acceptable range</div>
+        <div class="quality-icon">📍</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#eafaf1;">📊</div>
+            <div><div class="card-title">MV% Trend by Year</div><div class="card-desc">Track data completeness over time</div></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg class="sim-line" viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg">
+            <!-- Target line -->
+            <line x1="10" y1="40" x2="310" y2="40" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="312" y="43" font-size="8" fill="#2ecc71" font-family="DM Sans,sans-serif">75%</text>
+            <!-- MV% line -->
+            <polyline fill="none" stroke="#1a7a4a" stroke-width="2.5"
+              points="10,55 60,50 110,48 160,44 210,42 260,39 310,37"/>
+            <circle cx="10" cy="55" r="3.5" fill="#1a7a4a"/>
+            <circle cx="160" cy="44" r="3.5" fill="#1a7a4a"/>
+            <circle cx="310" cy="37" r="3.5" fill="#1a7a4a"/>
+            <text x="200" y="30" font-size="8" fill="#1a7a4a" font-family="DM Sans,sans-serif">MV% improving ↑</text>
+          </svg>
+          <div style="font-size:0.73rem;color:#9aafbe;text-align:center;">↳ Annual MV% with IARC 75% target line</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="card-icon" style="background:#fdf2f8;">📋</div>
+            <div><div class="card-title">Basis of Diagnosis Breakdown</div><div class="card-desc">All cases · 2013–2022</div></div>
+          </div>
+        </div>
+        <div class="card-body tight">
+          <table class="data-table">
+            <thead><tr><th>Basis</th><th>Count</th><th>%</th></tr></thead>
+            <tbody>
+              <tr><td>Histology / Cytology</td><td>3,474</td><td>82.4%</td></tr>
+              <tr><td>Clinical Investigation</td><td>280</td><td>6.6%</td></tr>
+              <tr><td>Clinical only</td><td>122</td><td>2.9%</td></tr>
+              <tr><td>Death Certificate Only</td><td>341</td><td>8.1%</td></tr>
+              <tr><td style="color:#9aafbe;">Total</td><td style="color:#9aafbe;">4,218</td><td style="color:#9aafbe;">100%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── REPORTS ── -->
+  <section id="reports" class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Reports Module</div>
+        <div class="section-sub">One-click PowerPoint generation using officer + rvg · all slides as editable vector graphics</div>
+      </div>
+      <span class="badge-tag">OFFICER + RVG</span>
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:24px;">
+      <div class="kpi blue">
+        <div class="kpi-label">Report Slides</div>
+        <div class="kpi-value">15</div>
+        <div class="kpi-sub">auto-generated slides</div>
+      </div>
+      <div class="kpi green">
+        <div class="kpi-label">Charts Embedded</div>
+        <div class="kpi-value">9</div>
+        <div class="kpi-sub">editable vector charts (rvg)</div>
+      </div>
+      <div class="kpi amber">
+        <div class="kpi-label">Export Format</div>
+        <div class="kpi-value">.pptx</div>
+        <div class="kpi-sub">Microsoft PowerPoint</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-left">
+          <div class="card-icon" style="background:#e8f4fd;">📄</div>
+          <div><div class="card-title">Report Slide Contents</div><div class="card-desc">create_powerpoint_report() · officer::read_pptx()</div></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-3" style="gap:12px;">
+          <div style="background:var(--mist);border-radius:8px;padding:12px;border-left:3px solid var(--ocean);">
+            <div style="font-weight:700;color:var(--ocean);font-size:0.8rem;margin-bottom:6px;">Slide 1–3: Context</div>
+            <div style="font-size:0.76rem;color:#5a7a9a;line-height:1.6;">Title slide · Data quality indicators (MV%, DCO%, ill-defined) · Key statistics summary</div>
+          </div>
+          <div style="background:var(--mist);border-radius:8px;padding:12px;border-left:3px solid var(--teal);">
+            <div style="font-weight:700;color:var(--teal);font-size:0.8rem;margin-bottom:6px;">Slide 4–8: Incidence</div>
+            <div style="font-size:0.76rem;color:#5a7a9a;line-height:1.6;">Age distribution · Annual case trend · Top 10 cancer sites · ASIR by sex · ASIR top 5 sites</div>
+          </div>
+          <div style="background:var(--mist);border-radius:8px;padding:12px;border-left:3px solid var(--coral);">
+            <div style="font-weight:700;color:var(--coral);font-size:0.8rem;margin-bottom:6px;">Slide 9–15: Mortality</div>
+            <div style="font-size:0.76rem;color:#5a7a9a;line-height:1.6;">Annual deaths trend · ASMR by sex · ASMR top 5 fatal sites · Top 10 deaths · Survival KM · Projections</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;background:#f8fbff;border:1px solid var(--border);border-radius:8px;padding:14px;">
+          <div style="font-size:0.82rem;font-weight:600;color:var(--slate);margin-bottom:8px;">R Code: Export Trigger</div>
+          <pre style="font-size:0.76rem;color:#2c3e50;margin:0;font-family:'Courier New',monospace;overflow-x:auto;">output$download_pptx &lt;- downloadHandler(
+  filename = function() paste0("cancer_report_", Sys.Date(), ".pptx"),
+  content  = function(file) {
+    ppt &lt;- create_powerpoint_report(data, mortality_data, pop_data, who_weights)
+    print(ppt, target = file)
+  }
+)</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-head">
+        <div class="card-head-left">
+          <div class="card-icon" style="background:#eafaf1;">🔧</div>
+          <div><div class="card-title">Adapting for Your SIDS Registry</div><div class="card-desc">Configuration checklist for new islands</div></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-2" style="gap:16px;">
+          <div>
+            <div style="font-weight:700;color:var(--ocean);font-size:0.85rem;margin-bottom:10px;">📁 Data Files to Replace</div>
+            <div style="font-size:0.8rem;color:#4a6070;line-height:2;">
+              ✅ <code>cancer_YYYY_YYYY_[registry].csv</code> — your incidence data<br>
+              ✅ <code>cancer_death_YYYY_YYYY.csv</code> — mortality records<br>
+              ✅ <code>WPP.xlsx</code> — download from UN WPP portal for your country<br>
+              ✅ <code>[country]_[admin].shp</code> — GADM or national GIS shapefile<br>
+              ✅ <code>admin_population_by_age.csv</code> — census age-band data
+            </div>
+          </div>
+          <div>
+            <div style="font-weight:700;color:var(--teal);font-size:0.85rem;margin-bottom:10px;">⚙️ Code Parameters to Update</div>
+            <div style="font-size:0.8rem;color:#4a6070;line-height:2;">
+              ✅ Incidence year range (e.g. 2015–2023)<br>
+              ✅ Mortality year range<br>
+              ✅ Shapefile join column (e.g. <code>NAME_1</code>, <code>DISTRICT</code>)<br>
+              ✅ Admin unit name in <code>standardize_parish_names()</code><br>
+              ✅ Login credentials in <code>user_base</code> (sodium hash)<br>
+              ✅ Dashboard title & logo in UI header
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer class="footer">
+  <strong>SIDS Cancer Registry Dashboard Framework</strong> · Based on the Barbados National Cancer Registry (BNR) Shiny Dashboard<br>
+  WHO 2000 Age-standardisation · IARC ICD-10 coding · UN World Population Prospects · R / Shiny open-source stack<br>
+  Designed for replication across Caribbean, Pacific, Indian Ocean, Atlantic &amp; Mediterranean SIDS · v1.0 2026
+</footer>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const tabs = ['landing','overview','incidence','mortality','survival','prevalence','projections','quality','reports'];
+  const idx = tabs.indexOf(id);
+  document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
